@@ -863,8 +863,10 @@ export class MenuScreen extends Screen {
         rect.add(new GUIColorPanel("red", 0, 0, 2560, 1440));
         rect.add(new GUITexturePanel(this.engine, "pano0", 0, 0, 2560, 1440));
         rect.add(new GUITexturePanel(this.engine, "logo", 2560 / 2 - 500, 50, 1000, 170));
+        rect.add(new GUIBitmapText(this.engine, "by Fraeric123", 2195, 1395, 5));
+        rect.add(new GUIBitmapText(this.engine, "not Minecraft 1.0.0", 10, 1395, 5));
 
-        this.Text = new GUIBitmapText(this.engine, "lol is good food", 1000, 520, 10, 0x777777);
+        this.Text = new GUIBitmapText(this.engine, "lol is good food", 1000, 520, 5, 0xFAFA00);
         rect.add(this.Text);
 
         this.addElement(rect);
