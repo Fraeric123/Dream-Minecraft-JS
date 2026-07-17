@@ -14,9 +14,12 @@ import { clone } from "../js/libs/SkeletonUtils.js";
 
 
 
-
+export const deg2rad = Math.PI / 180;
+export const rad2deg = 180 / Math.PI;
 
 export const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+export const DEG2RAD = (deg) => { return deg * Math.PI / 180 };
+export const RAD2DEG = (rad) => { return rad * 180 / Math.PI };
 
 
 
@@ -228,7 +231,6 @@ export class AssetManager {
             return;
         }
 
-        // Načítáme sekvenčně jeden po druhém
         for (const asset of assetsIterable) {
             try {
                 await this.load(asset);
@@ -335,6 +337,9 @@ export class BitmapFont {
 
         this.colorCache = new Map();
 
+        this.tempCanvas = document.createElement('canvas');
+        this.tempCtx = this.tempCanvas.getContext('2d');
+
         this.asset_manager.getAsset(this.textureID).onLoad.addEvent((asset) => {
             this.fontImage = asset.data.image;
             this._analyzeCharWidths();
@@ -419,7 +424,7 @@ export class BitmapFont {
     }
 
     _computeColorCode(c) {
-        const k = (c & 0x8) << 3;          // 0 or 64
+        const k = (c & 0x8) << 3;
         const r = ((c >> 2) & 1) * 191 + k;
         const g = ((c >> 1) & 1) * 191 + k;
         const b = (c & 1) * 191 + k;
@@ -428,31 +433,6 @@ export class BitmapFont {
 
     _shadowColor(color) {
         return (color & 0xFCFCFC) >> 2;
-    }
-
-    drawText(text, x, y, shadow = true, scale = 3, hexColor = 0xFFFFFF) {
-        if (!this.isReady) return;
-
-        x = Math.floor(x);
-        y = Math.floor(y);
-
-        const originalSmoothing = this.ctx.imageSmoothingEnabled;
-        this.ctx.imageSmoothingEnabled = false;
-
-        let defaultColor;
-        if (typeof hexColor === 'number') {
-            defaultColor = hexColor & 0xFFFFFF;
-        } else {
-            const parsed = this._parseHexColorString(hexColor);
-            defaultColor = parsed !== null ? parsed : 0xFFFFFF;
-        }
-
-        if (shadow) {
-            this._renderTextString(text, x + scale, y + scale, scale, defaultColor, true);
-        }
-        this._renderTextString(text, x, y, scale, defaultColor, false);
-
-        this.ctx.imageSmoothingEnabled = originalSmoothing;
     }
 
     getTextWidth(text, scale = 1) {
@@ -469,9 +449,67 @@ export class BitmapFont {
         return totalWidth;
     }
 
-    _renderTextString(text, x, y, scale, defaultColor, isShadow) {
+    drawText(text, x, y, rotation = 0, shadow = true, scale = 3, hexColor = 0xFFFFFF) {
+        if (!this.isReady) return;
+
+        const textWidth = this.getTextWidth(text, scale);
+        const textHeight = 8 * scale;
+
+        if (textWidth <= 0) return;
+
+        const originalSmoothing = this.ctx.imageSmoothingEnabled;
+        this.ctx.imageSmoothingEnabled = false;
+
+        let defaultColor;
+        if (typeof hexColor === 'number') {
+            defaultColor = hexColor & 0xFFFFFF;
+        } else {
+            const parsed = this._parseHexColorString(hexColor);
+            defaultColor = parsed !== null ? parsed : 0xFFFFFF;
+        }
+
+        const shadowOffset = shadow ? Math.ceil(scale) : 0;
+        this.tempCanvas.width = Math.ceil(textWidth) + shadowOffset;
+        this.tempCanvas.height = Math.ceil(textHeight) + shadowOffset;
+
+        this.tempCtx.clearRect(0, 0, this.tempCanvas.width, this.tempCanvas.height);
+        this.tempCtx.imageSmoothingEnabled = false;
+
+        if (shadow) {
+            this._renderToContext(this.tempCtx, text, shadowOffset, shadowOffset, scale, defaultColor, true);
+        }
+        this._renderToContext(this.tempCtx, text, 0, 0, scale, defaultColor, false);
+
+        this.ctx.save();
+
+        if (rotation !== 0) {
+            const halfW = this.tempCanvas.width / 2;
+            const halfH = this.tempCanvas.height / 2;
+
+            // Posuneme na zaokrouhlený střed
+            this.ctx.translate(Math.round(x + halfW), Math.round(y + halfH));
+            this.ctx.rotate(rotation);
+
+            // Vykreslíme vygenerovaný text
+            this.ctx.drawImage(
+                this.tempCanvas,
+                -halfW,
+                -halfH
+            );
+        } else {
+            this.ctx.drawImage(
+                this.tempCanvas,
+                Math.round(x),
+                Math.round(y)
+            );
+        }
+
+        this.ctx.restore();
+        this.ctx.imageSmoothingEnabled = originalSmoothing;
+    }
+
+    _renderToContext(ctx, text, x, y, scale, defaultColor, isShadow) {
         let xo = 0;
-        const ctx = this.ctx;
 
         let currentColor = isShadow ? this._shadowColor(defaultColor) : defaultColor;
         let currentTexture = this._getColoredFontTexture(this._hexToString(currentColor));
@@ -496,10 +534,15 @@ export class BitmapFont {
             const charWidth = this.charWidths[charCode] || 0;
 
             if (charWidth > 0) {
+                const targetX = Math.round(x + xo);
+                const targetY = Math.round(y);
+                const targetW = Math.round(8 * scale);
+                const targetH = Math.round(8 * scale);
+
                 ctx.drawImage(
                     currentTexture,
                     srcX, srcY, 8, 8,
-                    x + xo, y, 8 * scale, 8 * scale
+                    targetX, targetY, targetW, targetH
                 );
             }
             xo += charWidth * scale;
@@ -527,26 +570,39 @@ export class GUIDrawCommand {
 
 
 export class GUIColorPanel extends GUIDrawCommand {
-    constructor(color, x, y, w, h) {
+    constructor(color, x, y, w, h, rotation = 0) {
         super();
 
         this.color = color;
+
         this.x = x;
         this.y = y;
         this.w = w;
         this.h = h;
+
+        this.rotation = rotation;
     }
 
     render(ctx, element) {
         if (!this.visible) return;
 
-        ctx.fillStyle = this.color;
-        ctx.fillRect(
-            element.globalX + this.x,
-            element.globalY + this.y,
-            this.w,
-            this.h
-        );
+        const targetX = element.globalX + this.x;
+        const targetY = element.globalY + this.y;
+        const totalRotation = element.globalRot + this.rotation;
+
+        ctx.save();
+        if (totalRotation !== 0) {
+            const centerX = targetX + this.w / 2;
+            const centerY = targetY + this.h / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(totalRotation);
+            ctx.fillStyle = this.color;
+            ctx.fillRect(-this.w / 2, -this.h / 2, this.w, this.h);
+        } else {
+            ctx.fillStyle = this.color;
+            ctx.fillRect(targetX, targetY, this.w, this.h);
+        }
+        ctx.restore();
     }
 }
 
@@ -556,15 +612,18 @@ export class GUIColorPanel extends GUIDrawCommand {
 
 
 export class GUITexturePanel extends GUIDrawCommand {
-    constructor(engine, textureID, x, y, w, h) {
+    constructor(engine, textureID, x, y, w, h, rotation = 0) {
         super();
 
         this.asset_manager = engine.asset_manager;
         this.textureID = textureID;
+
         this.x = x;
         this.y = y;
         this.w = w;
         this.h = h;
+
+        this.rotation = rotation;
     }
 
     render(ctx, element) {
@@ -573,13 +632,88 @@ export class GUITexturePanel extends GUIDrawCommand {
         if (!asset || !asset.isLoaded)
             return;
 
-        ctx.drawImage(
-            asset.data.image,
-            element.globalX + this.x,
-            element.globalY + this.y,
-            this.w,
-            this.h
-        );
+        const targetX = element.globalX + this.x;
+        const targetY = element.globalY + this.y;
+        const totalRotation = element.globalRot + this.rotation;
+
+        ctx.save();
+        if (totalRotation !== 0) {
+            const centerX = targetX + this.w / 2;
+            const centerY = targetY + this.h / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(totalRotation);
+            ctx.drawImage(
+                asset.data.image,
+                -this.w / 2,
+                -this.h / 2,
+                this.w,
+                this.h
+            );
+        } else {
+            ctx.drawImage(
+                asset.data.image,
+                targetX,
+                targetY,
+                this.w,
+                this.h
+            );
+        }
+        ctx.restore();
+    }
+}
+
+
+
+
+
+
+export class GUIImagePanel extends GUIDrawCommand {
+    constructor(engine, image, x, y, w, h, rotation = 0, opacity = 1) {
+        super();
+
+        this.asset_manager = engine.asset_manager;
+        this.image = image;
+
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+
+        this.rotation = rotation;
+        this.opacity = opacity;
+    }
+
+    render(ctx, element) {
+        const targetX = element.globalX + this.x;
+        const targetY = element.globalY + this.y;
+        const totalRotation = element.globalRot + this.rotation;
+
+        ctx.save();
+        
+        ctx.globalAlpha = this.opacity; 
+
+        if (totalRotation !== 0) {
+            const centerX = targetX + this.w / 2;
+            const centerY = targetY + this.h / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(totalRotation);
+            ctx.drawImage(
+                this.image,
+                -this.w / 2,
+                -this.h / 2,
+                this.w,
+                this.h
+            );
+        } else {
+            ctx.drawImage(
+                this.image,
+                targetX,
+                targetY,
+                this.w,
+                this.h
+            );
+        }        
+        ctx.restore();
     }
 }
 
@@ -588,26 +722,34 @@ export class GUITexturePanel extends GUIDrawCommand {
 
 
 export class GUIClipBegin extends GUIDrawCommand {
-    constructor(x, y, w, h) {
+    constructor(x, y, w, h, rotation = 0) {
         super();
 
         this.x = x;
         this.y = y;
         this.w = w;
         this.h = h;
+
+        this.rotation = rotation;
     }
 
     render(ctx, element) {
         ctx.save();
 
-        ctx.beginPath();
+        const targetX = element.globalX + this.x;
+        const targetY = element.globalY + this.y;
+        const totalRotation = element.globalRot + this.rotation;
 
-        ctx.rect(
-            element.x + this.x,
-            element.y + this.y,
-            this.w,
-            this.h
-        );
+        ctx.beginPath();
+        if (totalRotation !== 0) {
+            const centerX = targetX + this.w / 2;
+            const centerY = targetY + this.h / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(totalRotation);
+            ctx.rect(-this.w / 2, -this.h / 2, this.w, this.h);
+        } else {
+            ctx.rect(targetX, targetY, this.w, this.h);
+        }
 
         ctx.clip();
     }
@@ -630,7 +772,7 @@ export class GUIClipEnd extends GUIDrawCommand {
 
 
 export class GUIText extends GUIDrawCommand {
-    constructor(font, text, x, y, size, color) {
+    constructor(font, text, x, y, rotation = 0, size = 15, color = "white") {
         super();
 
         this.font = font;
@@ -638,6 +780,8 @@ export class GUIText extends GUIDrawCommand {
 
         this.x = x;
         this.y = y;
+
+        this.rotation = rotation;
 
         this.size = size;
         this.color = color;
@@ -663,25 +807,33 @@ export class GUIText extends GUIDrawCommand {
 
 
 export class GUIBitmapText extends GUIDrawCommand {
-    constructor(engine, text, x, y, size, color = 0xFFFFFF, shadow = true) {
+    constructor(engine, text, x, y, rotation = 0, size = 5, color = 0xFFFFFF, shadow = true) {
         super();
-
         this.bitmap_font = engine.bitmap_font;
-
         this.text = text;
-
         this.shadow = shadow;
-
         this.x = x;
         this.y = y;
-
+        this.rotation = rotation;
         this.size = size;
         this.color = color;
     }
 
+    getTextWidth(text, scale = 1) {
+        return this.bitmap_font.getTextWidth(text, scale);
+    }
 
     render(ctx, element) {
-        this.bitmap_font.drawText(this.text, element.globalX + this.x, element.globalY + this.y, this.shadow, this.size, this.color);
+        const totalRotRad = (element.globalRot + this.rotation) * deg2rad;
+        this.bitmap_font.drawText(
+            this.text,
+            element.globalX + this.x,
+            element.globalY + this.y,
+            totalRotRad,
+            this.shadow,
+            this.size,
+            this.color
+        );
     }
 }
 
@@ -699,6 +851,8 @@ export class GUIElement {
 
         this.width = 0;
         this.height = 0;
+
+        this.rotation = 0
 
         this.offsetX = 0;
         this.offsetY = 0;
@@ -718,6 +872,10 @@ export class GUIElement {
 
     get globalY() {
         return this.parent ? this.parent.globalY + this.y : this.y;
+    }
+
+    get globalRot() {
+        return this.parent ? this.parent.globalRot + this.rotation : this.rotation;
     }
 
     add(command) {
@@ -769,6 +927,10 @@ export class Screen {
         );
     }
 
+    init() {
+
+    }
+
     render(ctx) {
         this.guiElements.forEach((element) => {
             element.render(ctx)
@@ -794,12 +956,12 @@ export class AssetLoadingScreen extends Screen {
 
         const rect = new GUIElement(this);
         rect.add(new GUIColorPanel("red", 0, 0, 2560, 1440));
-        rect.add(new GUIBitmapText(this.engine, "Minecraft asset loading", 15, 15, 16));
+        rect.add(new GUIBitmapText(this.engine, "Minecraft asset loading", 15, 15, 0, 16));
 
         this.Pic = new GUITexturePanel(this.engine, "terrain", 100, 400, 900, 500);
         rect.add(this.Pic);
 
-        this.Text = new GUIBitmapText(this.engine, "", 10, 320, 5, 0x777777);
+        this.Text = new GUIBitmapText(this.engine, "", 10, 320, 0, 5, 0x777777);
         rect.add(this.Text);
 
         this.addElement(rect);
@@ -826,12 +988,12 @@ export class LogoScreen extends Screen {
 
         const rect = new GUIElement(this);
         rect.add(new GUIColorPanel("black", 0, 0, 2560, 1440));
-        rect.add(new GUIBitmapText(this.engine, "Logo", 15, 15, 16));
+        rect.add(new GUIBitmapText(this.engine, "Logo", 15, 15, 0, 16));
 
         this.Pic = new GUITexturePanel(this.engine, "font", -500, 500, 5000, 500);
         rect.add(this.Pic);
 
-        this.Text = new GUIBitmapText(this.engine, "num", 10, 320, 10, 0x777777);
+        this.Text = new GUIBitmapText(this.engine, "num", 10, 320, 0, 10, 0x777777);
         rect.add(this.Text);
 
         this.addElement(rect);
@@ -859,20 +1021,143 @@ export class MenuScreen extends Screen {
     constructor(engine) {
         super(engine);
 
-        const rect = new GUIElement(this);
-        rect.add(new GUIColorPanel("red", 0, 0, 2560, 1440));
-        rect.add(new GUITexturePanel(this.engine, "pano0", 0, 0, 2560, 1440));
-        rect.add(new GUITexturePanel(this.engine, "logo", 2560 / 2 - 500, 50, 1000, 170));
-        rect.add(new GUIBitmapText(this.engine, "by Fraeric123", 2195, 1395, 5));
-        rect.add(new GUIBitmapText(this.engine, "not Minecraft 1.0.0", 10, 1395, 5));
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
 
-        this.Text = new GUIBitmapText(this.engine, "lol is good food", 1000, 520, 5, 0xFAFA00);
-        rect.add(this.Text);
+        this.splashTextStr = this._getRandomSplash();
+        this.gradientImage = this._createOverlayGradient(canvasW, canvasH);
+
+        const rect = new GUIElement(this);
+        const backgroundOverlay = new GUIElement(this);        
+
+        backgroundOverlay.add(new GUIImagePanel(
+            this.engine, 
+            this.gradientImage, 
+            0, 0, 
+            canvasW, canvasH,
+            0, 0.5
+        ));
+        this.addElement(backgroundOverlay);
+        rect.add(new GUITexturePanel(this.engine, "logo", canvasW / 2 - 500, 50, 1000, 170));
+        rect.add(new GUIBitmapText(this.engine, "by Fraeric123", 2195, 1395, 0, 5));
+        rect.add(new GUIBitmapText(this.engine, "not Minecraft 1.0.0", 10, 1395, 0, 5));
+
+        this.splashText = new GUIBitmapText(
+            this.engine,
+            this.splashTextStr,
+            centerX + 180,
+            150,
+            -20,
+            5,
+            0xFFFF00
+        );
+        rect.add(this.splashText);
 
         this.addElement(rect);
+
+        this.field_35357_f = 0;
+    }
+
+    _createOverlayGradient(width, height) {
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+
+        const whiteGrad = ctx.createLinearGradient(0, 0, 0, height);
+        whiteGrad.addColorStop(0, "rgba(255, 255, 255, 0.5)");
+        whiteGrad.addColorStop(1, "rgba(255, 255, 255, 1.0)");
+        ctx.fillStyle = whiteGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        const darkGrad = ctx.createLinearGradient(0, 0, 0, height);
+        darkGrad.addColorStop(0, "rgba(0, 0, 0, 0.0)");
+        darkGrad.addColorStop(1, "rgba(0, 0, 0, 0.5)");
+        ctx.fillStyle = darkGrad;
+        ctx.fillRect(0, 0, width, height);
+
+        return canvas;
+    }
+
+    _getRandomSplash() {
+        const splashes = [
+            "lol is good food",
+            "Missingno",
+            "Splat!",
+            "Platic!",
+            "Super retro!",
+            "Awesome!",
+            "100% pure power!",
+            "May contain nuts!"
+        ];
+
+        const today = new Date();
+        const month = today.getMonth() + 1;
+        const day = today.getDate();
+
+        if (month === 11 && day === 9) {
+            return "Happy birthday, ez!";
+        }
+        if (month === 6 && day === 1) {
+            return "Happy birthday, Notch!";
+        }
+        if (month === 12 && day === 24) {
+            return "Merry X-mas!";
+        }
+        if (month === 1 && day === 1) {
+            return "Happy new year!";
+        }
+
+        return splashes[Math.floor(Math.random() * splashes.length)];
+    }
+
+    init() {
+        const scene = this.engine.scene;
+
+        const p0 = this.engine.asset_manager.get("pano0");
+        const p1 = this.engine.asset_manager.get("pano1");
+        const p2 = this.engine.asset_manager.get("pano2");
+        const p3 = this.engine.asset_manager.get("pano3");
+        const p4 = this.engine.asset_manager.get("pano4");
+        const p5 = this.engine.asset_manager.get("pano5");
+
+        if (p0 && p1 && p2 && p3 && p4 && p5) {
+            const cubeTexture = new THREE.CubeTexture([
+                p1.image, // +X (Vpravo)
+                p3.image, // -X (Vlevo)
+                p4.image, // +Y (Nahoře)
+                p5.image, // -Y (Dole)
+                p0.image, // +Z (Vepředu)
+                p2.image  // -Z (Vzadu)
+            ]);
+
+            cubeTexture.needsUpdate = true;
+            cubeTexture.colorSpace = THREE.LinearSRGBColorSpace;
+            scene.background = cubeTexture;
+        }
+
+        this.engine.camera.position.set(0, 0, 0);
+    }
+
+    render(ctx) {
+        this.field_35357_f++;
+
+        const rotX = (Math.sin(this.field_35357_f / 400) * 25 + 20) * deg2rad;
+        const rotY = (-this.field_35357_f * 0.1) * deg2rad;
+
+        this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
+
+        const timeMs = Date.now() % 1000;
+        const wave = Math.abs(Math.sin((timeMs / 1000) * Math.PI * 2));
+        const scaleFactor = 1.8 - wave * 0.1;
+
+        const textWidth = this.splashText.getTextWidth(this.splashText.text, 1);
+        this.splashText.size = (scaleFactor * 100) / (textWidth + 32) * 3;
+
+        super.render(ctx);
     }
 }
-
 
 
 
@@ -1136,6 +1421,7 @@ export class VoxWheel {
 
     setScreen(screen) {
         this.screen = screen;
+        this.screen.init();
     }
 
     async run() {
@@ -1168,8 +1454,8 @@ export class VoxWheel {
     loop() {
         requestAnimationFrame(() => this.loop());
         try {
-            const dt = 1 / 60; 
-            
+            const dt = 1 / 60;
+
             this.input_manager.update(dt);
 
             this.render();
