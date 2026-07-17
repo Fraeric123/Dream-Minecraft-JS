@@ -14,6 +14,10 @@ import { clone } from "../js/libs/SkeletonUtils.js";
 
 
 
+
+
+
+
 export const deg2rad = Math.PI / 180;
 export const rad2deg = 180 / Math.PI;
 
@@ -26,6 +30,7 @@ export const log = (data) => { console.log(data) };
 export const isPointInBox = (px, py, bx, by, bw, bh) => {
     return px >= bx && px <= bx + bw && py >= by && py <= by + bh;
 }
+
 
 
 
@@ -107,6 +112,7 @@ const splashes = [
 
 
 
+
 export const getRandomSplash = () => {
     const today = new Date();
     const month = today.getMonth() + 1;
@@ -127,6 +133,8 @@ export const getRandomSplash = () => {
 
     return splashes[Math.floor(Math.random() * splashes.length)];
 }
+
+
 
 
 
@@ -159,6 +167,8 @@ export const createOverlayGradient = (width, height) => {
 
 
 
+
+
 export const Enum = {
     "AssetType": {
         "None": 0,
@@ -175,6 +185,13 @@ export const Enum = {
     "RenderState": {
         "Clear": 0,
         "MenuBackground": 1
+    },
+    "CursorType": {
+        "Pointer": "pointer",
+        "Default": "default",
+        "Crosshair": "crosshair",
+        "Grab": "grab",
+        "None": "none"
     }
 }
 
@@ -226,13 +243,6 @@ export class EventList {
 
 
 
-
-
-
-
-
-
-
 export class Asset {
     constructor(id, path, type = Enum.AssetType.None) {
         this.id = id;
@@ -248,8 +258,6 @@ export class Asset {
         this.onLoad = new EventList();
     }
 }
-
-
 
 
 
@@ -293,8 +301,6 @@ export class AssetList {
         return this.assets.size;
     }
 }
-
-
 
 
 
@@ -453,6 +459,7 @@ export class AssetManager {
         });
     }
 }
+
 
 
 
@@ -693,6 +700,7 @@ export class BitmapFont {
 
 
 
+
 export class GUIDrawCommand {
     constructor() {
         this.visible = true;
@@ -700,10 +708,6 @@ export class GUIDrawCommand {
 
     render(ctx, element) { }
 }
-
-
-
-
 
 
 export class GUIColorPanel extends GUIDrawCommand {
@@ -745,10 +749,6 @@ export class GUIColorPanel extends GUIDrawCommand {
         ctx.restore();
     }
 }
-
-
-
-
 
 
 export class GUITexturePanel extends GUIDrawCommand {
@@ -808,10 +808,6 @@ export class GUITexturePanel extends GUIDrawCommand {
 }
 
 
-
-
-
-
 export class GUIImagePanel extends GUIDrawCommand {
     constructor(engine, image, x, y, w, h, rotation = 0, opacity = 1) {
         super();
@@ -863,9 +859,6 @@ export class GUIImagePanel extends GUIDrawCommand {
         ctx.restore();
     }
 }
-
-
-
 
 
 export class GUITextureSpritePanel extends GUIDrawCommand {
@@ -937,9 +930,6 @@ export class GUITextureSpritePanel extends GUIDrawCommand {
 }
 
 
-
-
-
 export class GUIClipBegin extends GUIDrawCommand {
     constructor(x, y, w, h, rotation = 0) {
         super();
@@ -977,19 +967,11 @@ export class GUIClipBegin extends GUIDrawCommand {
 }
 
 
-
-
-
-
-
 export class GUIClipEnd extends GUIDrawCommand {
     render(ctx) {
         ctx.restore();
     }
 }
-
-
-
 
 
 export class GUIText extends GUIDrawCommand {
@@ -1028,11 +1010,6 @@ export class GUIText extends GUIDrawCommand {
         ctx.restore();
     }
 }
-
-
-
-
-
 
 
 export class GUIBitmapText extends GUIDrawCommand {
@@ -1075,6 +1052,9 @@ export class GUIBitmapText extends GUIDrawCommand {
         );
     }
 }
+
+
+
 
 
 
@@ -1161,11 +1141,6 @@ export class GUIElement {
 }
 
 
-
-
-
-
-
 export class GUIButtonElement extends GUIElement {
     constructor(screen, text = "Button", x = 0, y = 0, width = 200, height = 20) {
         super(screen);
@@ -1208,47 +1183,49 @@ export class GUIButtonElement extends GUIElement {
 
     render(ctx) {
         const mpos = this.input.getInputState("Mouse_Position") || { x: 999999, y: 999999 };
-        const mpress = this.input.getInputState("Mouse_Click_0") || false
+
+        const mbuttonDown = this.input.getInputState("Mouse_Button_0") || false;
+
+        const mtriggerActive = this.input.getInputState("Mouse_Trigger_0") || false;
 
         this.sprite.x = -(this.width * this.scale / 2);
         this.sprite.y = -(this.height * this.scale / 2);
 
         this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
-        this.mousePress = this.mouseHover && mpress;
+
+        this.mousePress = this.mouseHover && mbuttonDown;
 
         if (this.mouseHover) {
+            this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Grab);
             if (this.mousePress) {
-                this.state = this.hovered
+                this.state = this.hovered;
+                this.title.color = 0xFAFA00;
             } else {
-                this.state = this.hovered
+                this.state = this.hovered;
                 this.title.color = 0xFAFA00;
             }
         } else {
-            this.state = this.normal
+            this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.None);
+            this.state = this.normal;
             this.title.color = 0xFFFFFF;
         }
 
-        if (this.oldMousePress != this.mousePress) {
-            this.oldMousePress = this.mousePress;
-            if (this.mousePress) {
-                this.onClick.runAll()
-            } else {
-                this.onRelease.runAll()
-            }
+        if (this.mouseHover && mtriggerActive) {
+            this.onClick.runAll();
         }
 
         if (this.oldHover != this.mouseHover) {
             this.oldHover = this.mouseHover;
             if (this.mouseHover) {
-                this.onHover.runAll()
+                this.onHover.runAll();
             } else {
-                this.onUnHover.runAll()
+                this.onUnHover.runAll();
             }
         }
 
-        this.sprite.cords = this.state
-        this.sprite.w = this.width * this.scale
-        this.sprite.h = this.height * this.scale
+        this.sprite.cords = this.state;
+        this.sprite.w = this.width * this.scale;
+        this.sprite.h = this.height * this.scale;
 
         this.title.x = 0 - this.title.getTextWidth() / 2;
         this.title.y = 0 - this.title.getTextHeight() / 2;
@@ -1256,6 +1233,7 @@ export class GUIButtonElement extends GUIElement {
         super.render(ctx);
     }
 }
+
 
 
 
@@ -1294,11 +1272,6 @@ export class Screen {
 }
 
 
-
-
-
-
-
 export class AssetLoadingScreen extends Screen {
     constructor(engine) {
         super(engine);
@@ -1334,9 +1307,6 @@ export class AssetLoadingScreen extends Screen {
 }
 
 
-
-
-
 export class LogoScreen extends Screen {
     constructor(engine) {
         super(engine);
@@ -1361,15 +1331,12 @@ export class LogoScreen extends Screen {
         this.Text.text = this.renderTime.toString();
 
         if (this.renderTime > 250) {
-            this.engine.setScreen(new SettingsScreen(this.engine));
+            this.engine.setScreen(new MenuScreen(this.engine));
         }
 
         super.render(ctx);
     }
 }
-
-
-
 
 
 export class MenuScreen extends Screen {
@@ -1400,9 +1367,10 @@ export class MenuScreen extends Screen {
         this.addElement(rect);
 
         const playBut = this.addButton("Play", centerX, centerY - 100);
-        const exitBut = this.addButton("Exit", centerX, centerY - 30);
+        const settingsBut = this.addButton("Settings", centerX, centerY - 30);
+        const exitBut = this.addButton("Exit", centerX, centerY + 40);
 
-        playBut.onClick.addEvent(() => {
+        settingsBut.onClick.addEvent(() => {
             engine.setScreen(new SettingsScreen(engine));
         })
 
@@ -1444,11 +1412,6 @@ export class MenuScreen extends Screen {
         super.render(ctx);
     }
 }
-
-
-
-
-
 
 
 export class SettingsScreen extends Screen {
@@ -1549,6 +1512,21 @@ export class CanvasRenderer {
         window.addEventListener('resize', this.resize);
     }
 
+    /**
+ * Změní kurzor nad zadaným canvasem.
+ * @param {HTMLCanvasElement|string} canvasOrId - Element canvasu nebo jeho ID.
+ * @param {string} cursorType - Typ kurzoru (např. 'pointer', 'default', 'crosshair', 'grab', 'none')
+ */
+    setCanvasCursor(canvasOrId, cursorType) {
+        const canvas = typeof canvasOrId === 'string'
+            ? document.getElementById(canvasOrId)
+            : canvasOrId;
+
+        if (canvas) {
+            canvas.style.cursor = cursorType;
+        }
+    }
+
     resize() {
         const targetAspect = this.VIRTUAL_WIDTH / this.VIRTUAL_HEIGHT;
         const windowWidth = window.innerWidth;
@@ -1586,13 +1564,11 @@ export class CanvasRenderer {
 
 
 
-
 export class Manager {
     constructor(engine) {
         this.engine = engine;
     }
 }
-
 
 
 
@@ -1624,7 +1600,6 @@ export class InputList {
         return false;
     }
 }
-
 
 
 
@@ -1712,14 +1687,21 @@ export class InputManager extends Manager {
     update(dt) {
         const input = this.engine.input;
 
+        const currentMouse0 = input.getInputState('Mouse_Button_0') || false;
+        const previousMouse0 = this.previousInputs.get('Mouse_Button_0') || false;
+
+        if (currentMouse0 && !previousMouse0) {
+            input.setInputState('Mouse_Trigger_0', true);
+        } else {
+            input.setInputState('Mouse_Trigger_0', false);
+        }
+
         for (const [key, currentValue] of input.inputs.entries()) {
             const previousValue = this.previousInputs.get(key) || false;
 
             if (key.startsWith('Mouse_Click_0')) {
                 if (currentValue === true && previousValue === false) {
-                    
-                } else if (currentValue === false && previousValue === true) {
-
+                    input.setInputState('Clicked0', true);
                 }
             }
 
@@ -1733,6 +1715,8 @@ export class InputManager extends Manager {
 
             this.previousInputs.set(key, currentValue);
         }
+
+        this.previousInputs.set('Mouse_Button_0', currentMouse0);
 
         for (let [key, value] of input.inputs.entries()) {
             if (key.startsWith('Mouse_Click_') && value === true) {
