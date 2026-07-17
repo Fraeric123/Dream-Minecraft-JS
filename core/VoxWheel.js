@@ -106,6 +106,59 @@ const splashes = [
 
 
 
+
+export const getRandomSplash = () => {
+    const today = new Date();
+    const month = today.getMonth() + 1;
+    const day = today.getDate();
+
+    if (month === 11 && day === 9) {
+        return "Happy birthday, ez!";
+    }
+    if (month === 6 && day === 1) {
+        return "Happy birthday, Notch!";
+    }
+    if (month === 12 && day === 24) {
+        return "Merry X-mas!";
+    }
+    if (month === 1 && day === 1) {
+        return "Happy new year!";
+    }
+
+    return splashes[Math.floor(Math.random() * splashes.length)];
+}
+
+
+
+
+
+
+export const createOverlayGradient = (width, height) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+
+    const whiteGrad = ctx.createLinearGradient(0, 0, 0, height);
+    whiteGrad.addColorStop(0, "rgba(255, 255, 255, 0.5)");
+    whiteGrad.addColorStop(1, "rgba(255, 255, 255, 1.0)");
+    ctx.fillStyle = whiteGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    const darkGrad = ctx.createLinearGradient(0, 0, 0, height);
+    darkGrad.addColorStop(0, "rgba(0, 0, 0, 0.0)");
+    darkGrad.addColorStop(1, "rgba(0, 0, 0, 0.5)");
+    ctx.fillStyle = darkGrad;
+    ctx.fillRect(0, 0, width, height);
+
+    return canvas;
+}
+
+
+
+
+
+
 export const Enum = {
     "AssetType": {
         "None": 0,
@@ -118,6 +171,10 @@ export const Enum = {
         "Left": 0,
         "Right": 1,
         "Centered": 2,
+    },
+    "RenderState": {
+        "Clear": 0,
+        "MenuBackground": 1
     }
 }
 
@@ -529,7 +586,7 @@ export class BitmapFont {
         return totalWidth;
     }
 
-    drawText(text, x, y, rotation = 0, shadow = true, scale = 3, hexColor = 0xFFFFFF, opacity = 1) {
+    drawText(text, x, y, rotation = 0, shadow = true, scale = 3, hexColor = 0xFFFFFF, opacity = 1, center = false) {
         if (!this.isReady) return;
 
         const textWidth = this.getTextWidth(text, scale);
@@ -562,26 +619,21 @@ export class BitmapFont {
 
         this.ctx.save();
 
-        if (rotation !== 0) {
-            const halfW = this.tempCanvas.width / 2;
-            const halfH = this.tempCanvas.height / 2;
+        const halfW = this.tempCanvas.width / 2;
+        const halfH = this.tempCanvas.height / 2;
 
-            // Posuneme na zaokrouhlený střed
-            this.ctx.translate(Math.round(x + halfW), Math.round(y + halfH));
-            this.ctx.rotate(rotation);
-
-            // Vykreslíme vygenerovaný text
-            this.ctx.drawImage(
-                this.tempCanvas,
-                -halfW,
-                -halfH
-            );
+        if (center) {
+            this.ctx.translate(Math.round(x), Math.round(y));
+            if (rotation !== 0) this.ctx.rotate(rotation);
+            this.ctx.drawImage(this.tempCanvas, -Math.round(halfW), -Math.round(halfH));
         } else {
-            this.ctx.drawImage(
-                this.tempCanvas,
-                Math.round(x),
-                Math.round(y)
-            );
+            if (rotation !== 0) {
+                this.ctx.translate(Math.round(x + halfW), Math.round(y + halfH));
+                this.ctx.rotate(rotation);
+                this.ctx.drawImage(this.tempCanvas, -halfW, -halfH);
+            } else {
+                this.ctx.drawImage(this.tempCanvas, Math.round(x), Math.round(y));
+            }
         }
 
         this.ctx.restore();
@@ -984,7 +1036,7 @@ export class GUIText extends GUIDrawCommand {
 
 
 export class GUIBitmapText extends GUIDrawCommand {
-    constructor(engine, text, x, y, rotation = 0, size = 5, color = 0xFFFFFF, shadow = true, opacity = 1) {
+    constructor(engine, text, x, y, rotation = 0, size = 5, color = 0xFFFFFF, shadow = true, opacity = 1, center = false) {
         super();
         this.bitmap_font = engine.bitmap_font;
         this.text = text;
@@ -995,6 +1047,7 @@ export class GUIBitmapText extends GUIDrawCommand {
         this.size = size;
         this.color = color;
         this.opacity = opacity;
+        this.center = center;
     }
 
     getTextWidth(text = this.text, scale = this.size) {
@@ -1017,7 +1070,8 @@ export class GUIBitmapText extends GUIDrawCommand {
             this.shadow,
             this.size,
             this.color,
-            this.opacity
+            this.opacity,
+            this.center
         );
     }
 }
@@ -1085,8 +1139,8 @@ export class GUIElement {
         return this.add(new GUIText(font, text, x, y, rotation, size, color, opacity));
     }
 
-    addBitmapText(text, x, y, rotation, size, color, shadow, opacity) {
-        return this.add(new GUIBitmapText(this.engine, text, x, y, rotation, size, color, shadow, opacity));
+    addBitmapText(text, x, y, rotation, size, color, shadow, opacity, center) {
+        return this.add(new GUIBitmapText(this.engine, text, x, y, rotation, size, color, shadow, opacity, center));
     }
 
     addImagePanel(image, x, y, w, h, rotation, opacity) {
@@ -1120,7 +1174,7 @@ export class GUIButtonElement extends GUIElement {
 
         this.normal = [0, 66, 200, 20];
         this.hovered = [0, 86, 200, 20];
-        this.disabled = [0, 46, 200, 20];
+        this.disabled = [0, 456, 200, 20];
 
         this.state = this.normal;
 
@@ -1135,21 +1189,29 @@ export class GUIButtonElement extends GUIElement {
         this.height = height;
 
         this.onClick = new EventList();
+        this.onRelease = new EventList();
+        this.onHover = new EventList();
+        this.onUnHover = new EventList();
 
-        this.oldMousePress = false
+        this.onClick.addEvent(() => {
+            this.engine.playSound("s_click");
+        })
 
-        this.scale = 4
+        this.oldMousePress = false;
+        this.oldHover = false;
 
-        this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale/2), -(this.height * this.scale/2), 199, 19, this.state);
-        this.title = this.addBitmapText(this.text, 0 + (this.width * this.scale/2), 0, 0, 1.25 * this.scale);
+        this.scale = 3;
+
+        this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.state);
+        this.title = this.addBitmapText(this.text, 0 + (this.width * this.scale / 2), 0, 0, 1.25 * this.scale);
     }
 
     render(ctx) {
         const mpos = this.input.getInputState("Mouse_Position") || { x: 999999, y: 999999 };
-        const mpress = this.input.getInputState("Mouse_Button_0") || false
+        const mpress = this.input.getInputState("Mouse_Click_0") || false
 
-        this.sprite.x = -(this.width * this.scale/2);
-        this.sprite.y = -(this.height * this.scale/2);
+        this.sprite.x = -(this.width * this.scale / 2);
+        this.sprite.y = -(this.height * this.scale / 2);
 
         this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
         this.mousePress = this.mouseHover && mpress;
@@ -1170,6 +1232,17 @@ export class GUIButtonElement extends GUIElement {
             this.oldMousePress = this.mousePress;
             if (this.mousePress) {
                 this.onClick.runAll()
+            } else {
+                this.onRelease.runAll()
+            }
+        }
+
+        if (this.oldHover != this.mouseHover) {
+            this.oldHover = this.mouseHover;
+            if (this.mouseHover) {
+                this.onHover.runAll()
+            } else {
+                this.onUnHover.runAll()
             }
         }
 
@@ -1177,8 +1250,8 @@ export class GUIButtonElement extends GUIElement {
         this.sprite.w = this.width * this.scale
         this.sprite.h = this.height * this.scale
 
-        this.title.x = 0 - this.title.getTextWidth()/2;
-        this.title.y = 0 - this.title.getTextHeight()/2;
+        this.title.x = 0 - this.title.getTextWidth() / 2;
+        this.title.y = 0 - this.title.getTextHeight() / 2;
 
         super.render(ctx);
     }
@@ -1288,7 +1361,7 @@ export class LogoScreen extends Screen {
         this.Text.text = this.renderTime.toString();
 
         if (this.renderTime > 250) {
-            this.engine.setScreen(new MenuScreen(this.engine));
+            this.engine.setScreen(new SettingsScreen(this.engine));
         }
 
         super.render(ctx);
@@ -1308,134 +1381,126 @@ export class MenuScreen extends Screen {
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
 
-        this.splashTextStr = this._getRandomSplash();
-        this.gradientImage = this._createOverlayGradient(canvasW, canvasH);
+        this.splashTextStr = engine.splash;
+        this.gradientImage = createOverlayGradient(canvasW, canvasH);
 
         const rect = new GUIElement(this);
         const backgroundOverlay = new GUIElement(this);
 
-        backgroundOverlay.add(new GUIImagePanel(
-            this.engine,
-            this.gradientImage,
-            0, 0,
-            canvasW, canvasH,
-            0, 0.2
-        ));
-        this.addElement(backgroundOverlay);
-        rect.add(new GUITexturePanel(this.engine, "logo", canvasW / 2 - 500, 50, 1000, 170));
+        backgroundOverlay.add(new GUIImagePanel(this.engine, this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.2));
+
+        this.splashText = new GUIBitmapText(this.engine, this.splashTextStr, centerX + 350, 250, -20, 5, 0xFFFF00, true, 1, true);
+
+        rect.add(new GUITexturePanel(this.engine, "logo", canvasW / 2 - 500, 100, 1000, 170));
         rect.add(new GUIBitmapText(this.engine, "by Fraeric123", 2195, 1395, 0, 5));
         rect.add(new GUIBitmapText(this.engine, "not Minecraft 1.0.0", 10, 1395, 0, 5));
-
-        this.splashText = new GUIBitmapText(
-            this.engine,
-            this.splashTextStr,
-            centerX + 180,
-            150,
-            -20,
-            5,
-            0xFFFF00
-        );
         rect.add(this.splashText);
 
+        this.addElement(backgroundOverlay);
         this.addElement(rect);
 
-        this.playBut = this.addButton("Play", centerX, centerY-100);
-        this.playBut.onClick.addEvent(() => {
-            log("play")
+        const playBut = this.addButton("Play", centerX, centerY - 100);
+        const exitBut = this.addButton("Exit", centerX, centerY - 30);
+
+        playBut.onClick.addEvent(() => {
+            engine.setScreen(new SettingsScreen(engine));
         })
 
-        this.exitBut = this.addButton("Exit", centerX, centerY);
-        this.exitBut.onClick.addEvent(() => {
+        exitBut.onClick.addEvent(() => {
             window.close();
         })
-
-        this.f = 0;
-    }
-
-    _createOverlayGradient(width, height) {
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-
-        const whiteGrad = ctx.createLinearGradient(0, 0, 0, height);
-        whiteGrad.addColorStop(0, "rgba(255, 255, 255, 0.5)");
-        whiteGrad.addColorStop(1, "rgba(255, 255, 255, 1.0)");
-        ctx.fillStyle = whiteGrad;
-        ctx.fillRect(0, 0, width, height);
-
-        const darkGrad = ctx.createLinearGradient(0, 0, 0, height);
-        darkGrad.addColorStop(0, "rgba(0, 0, 0, 0.0)");
-        darkGrad.addColorStop(1, "rgba(0, 0, 0, 0.5)");
-        ctx.fillStyle = darkGrad;
-        ctx.fillRect(0, 0, width, height);
-
-        return canvas;
-    }
-
-    _getRandomSplash() {
-        const today = new Date();
-        const month = today.getMonth() + 1;
-        const day = today.getDate();
-
-        if (month === 11 && day === 9) {
-            return "Happy birthday, ez!";
-        }
-        if (month === 6 && day === 1) {
-            return "Happy birthday, Notch!";
-        }
-        if (month === 12 && day === 24) {
-            return "Merry X-mas!";
-        }
-        if (month === 1 && day === 1) {
-            return "Happy new year!";
-        }
-
-        return splashes[Math.floor(Math.random() * splashes.length)];
     }
 
     init() {
-        const scene = this.engine.scene;
+        if (this.engine.renderState.state == Enum.RenderState.Clear) {
+            this.engine.setRenderState(Enum.RenderState.MenuBackground);
 
-        const p0 = this.engine.asset_manager.get("pano0");
-        const p1 = this.engine.asset_manager.get("pano1");
-        const p2 = this.engine.asset_manager.get("pano2");
-        const p3 = this.engine.asset_manager.get("pano3");
-        const p4 = this.engine.asset_manager.get("pano4");
-        const p5 = this.engine.asset_manager.get("pano5");
+            const p0 = this.engine.asset_manager.get("pano0");
+            const p1 = this.engine.asset_manager.get("pano1");
+            const p2 = this.engine.asset_manager.get("pano2");
+            const p3 = this.engine.asset_manager.get("pano3");
+            const p4 = this.engine.asset_manager.get("pano4");
+            const p5 = this.engine.asset_manager.get("pano5");
 
-        if (p0 && p1 && p2 && p3 && p4 && p5) {
-            const cubeTexture = new THREE.CubeTexture([
-                p1.image, // +X (Vpravo)
-                p3.image, // -X (Vlevo)
-                p4.image, // +Y (Nahoře)
-                p5.image, // -Y (Dole)
-                p0.image, // +Z (Vepředu)
-                p2.image  // -Z (Vzadu)
-            ]);
+            this.engine.setPanorama(p0, p1, p2, p3, p4, p5);
 
-            cubeTexture.needsUpdate = true;
-            cubeTexture.colorSpace = THREE.LinearSRGBColorSpace;
-            scene.background = cubeTexture;
+            this.engine.camera.position.set(0, 0, 0);
         }
-
-        this.engine.camera.position.set(0, 0, 0);
     }
 
     render(ctx) {
-        this.f++;
-
-        const rotX = (Math.sin(this.f / 400) * 25 + 20) * deg2rad;
-        const rotY = (-this.f * 0.1) * deg2rad;
-
-        this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
+        const rotX = (Math.sin(Date.now() / 10 / 400) * 25 + 20) * deg2rad;
+        const rotY = (-Date.now() / 10 * 0.1) * deg2rad;
 
         const timeMs = Date.now() % 1000;
         const wave = Math.abs(Math.sin((timeMs / 1000) * Math.PI * 2));
         const scaleFactor = 1.8 - wave * 0.1;
 
         const textWidth = this.splashText.getTextWidth(this.splashText.text, 1);
+
+        this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
         this.splashText.size = (scaleFactor * 100) / (textWidth + 32) * 3;
+
+        super.render(ctx);
+    }
+}
+
+
+
+
+
+
+
+export class SettingsScreen extends Screen {
+    constructor(engine) {
+        super(engine);
+
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+
+        this.gradientImage = createOverlayGradient(canvasW, canvasH);
+
+        const rect = new GUIElement(this);
+        const backgroundOverlay = new GUIElement(this);
+
+        backgroundOverlay.add(new GUIImagePanel(this.engine, this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.2));
+
+        rect.add(new GUIBitmapText(this.engine, "Settings", centerX, 150, 0, 5, 0xFFFFFF, true, 1, true));
+
+        this.addElement(backgroundOverlay);
+        this.addElement(rect);
+
+        const backBut = this.addButton("Back", centerX - 960, 400);
+
+        backBut.onClick.addEvent(() => {
+            engine.setScreen(new MenuScreen(engine));
+        })
+    }
+
+    init() {
+        if (this.engine.renderState.state == Enum.RenderState.Clear) {
+            this.engine.setRenderState(Enum.RenderState.MenuBackground);
+
+            const p0 = this.engine.asset_manager.get("pano0");
+            const p1 = this.engine.asset_manager.get("pano1");
+            const p2 = this.engine.asset_manager.get("pano2");
+            const p3 = this.engine.asset_manager.get("pano3");
+            const p4 = this.engine.asset_manager.get("pano4");
+            const p5 = this.engine.asset_manager.get("pano5");
+
+            this.engine.setPanorama(p0, p1, p2, p3, p4, p5);
+
+            this.engine.camera.position.set(0, 0, 0);
+        }
+    }
+
+    render(ctx) {
+        const rotX = (Math.sin(Date.now() / 10 / 400) * 25 + 20) * deg2rad;
+        const rotY = (-Date.now() / 10 * 0.1) * deg2rad;
+
+        this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
 
         super.render(ctx);
     }
@@ -1588,6 +1653,12 @@ export class InputManager extends Manager {
         const input = this.engine.input;
         const inputCanvas = this.engine.canvas;
 
+        window.addEventListener('click', () => {
+            if (THREE.AudioContext.getContext().state === 'suspended') {
+                THREE.AudioContext.getContext().resume();
+            }
+        });
+
         window.addEventListener('keydown', (e) => {
             if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                 e.preventDefault();
@@ -1642,9 +1713,17 @@ export class InputManager extends Manager {
         const input = this.engine.input;
 
         for (const [key, currentValue] of input.inputs.entries()) {
-            if (key === 'Mouse_Position' || key.startsWith('Mouse_Click_')) continue;
-
             const previousValue = this.previousInputs.get(key) || false;
+
+            if (key.startsWith('Mouse_Click_0')) {
+                if (currentValue === true && previousValue === false) {
+                    
+                } else if (currentValue === false && previousValue === true) {
+
+                }
+            }
+
+            if (key === 'Mouse_Position' || key.startsWith('Mouse_Click_')) continue;
 
             if (currentValue === true && previousValue === false) {
                 this.keyPressed.runAll(key);
@@ -1670,6 +1749,21 @@ export class InputManager extends Manager {
 
 
 
+export class RenderState {
+    constructor(engine) {
+        this.engine = engine;
+
+        this.state = Enum.RenderState.Clear
+    }
+}
+
+
+
+
+
+
+
+
 export class VoxWheel {
     constructor({ assets = new AssetList() }) {
 
@@ -1678,14 +1772,12 @@ export class VoxWheel {
         this.asset_manager = new AssetManager(this)
 
         this.fogColor = new THREE.Color(0.5, 0.8, 1.0);
-
         this.skyFogColor = new THREE.Color(0.5, 0.8, 1.0);
-        this.skyFogDensity = 0.008;
-
         this.waterFogColor = new THREE.Color(0.2, 0.2, 0.8);
-        this.waterFogDensity = 0.1;
-
         this.lavaFogColor = new THREE.Color(0.8, 0.2, 0.2);
+
+        this.skyFogDensity = 0.008;
+        this.waterFogDensity = 0.1;
         this.lavaFogDensity = 0.4;
 
         this.renderer = null;
@@ -1697,18 +1789,60 @@ export class VoxWheel {
         this.input = new InputList();
         this.input_manager = new InputManager(this);
 
+        this.listener = new THREE.AudioListener();
         this.camera = new THREE.PerspectiveCamera(70, this.canvas_renderer.POM, 0.01, 1000.0);
         this.scene = new THREE.Scene();
         this.scene.fog = new THREE.FogExp2(this.fogColor, 0.008);
+
+        this.camera.add(this.listener);
+        this.scene.add(this.camera);
+
+        this.renderState = new RenderState(this);
+
+        this.splash = getRandomSplash();
+
+        this.MenuBackgroundScroll = 0;
 
         this.screen = null;
 
         this.bitmap_font = new BitmapFont(this, "font");
     }
 
+    playSound(soundID, volume = 1, speed = 1, time = 0) {
+        const asset = this.asset_manager.getAsset(soundID);
+        if (asset && asset.isLoaded) {
+            const sound = new THREE.Audio(this.listener);
+            sound.setBuffer(asset.data);
+            sound.setVolume(volume);
+            sound.setPlaybackRate(speed);
+            sound.play(time);
+        }
+    }
+
+    setPanorama(p0, p1, p2, p3, p4, p5) {
+        if (p0 && p1 && p2 && p3 && p4 && p5) {
+            const cubeTexture = new THREE.CubeTexture([
+                p1.image, // +X (Vpravo)
+                p3.image, // -X (Vlevo)
+                p4.image, // +Y (Nahoře)
+                p5.image, // -Y (Dole)
+                p0.image, // +Z (Vepředu)
+                p2.image  // -Z (Vzadu)
+            ]);
+
+            cubeTexture.needsUpdate = true;
+            cubeTexture.colorSpace = THREE.LinearSRGBColorSpace;
+            this.scene.background = cubeTexture;
+        }
+    }
+
     setScreen(screen) {
         this.screen = screen;
         this.screen.init();
+    }
+
+    setRenderState(state) {
+        this.renderState = state;
     }
 
     async run() {
@@ -1771,6 +1905,12 @@ assets.newAsset("logo", "../assets/textures/mclogo.png", Enum.AssetType.Texture)
 assets.newAsset("pack", "../assets/textures/pack.png", Enum.AssetType.Texture);
 assets.newAsset("gui", "../assets/textures/gui/gui.png", Enum.AssetType.Texture);
 assets.newAsset("icons", "../assets/textures/gui/icons.png", Enum.AssetType.Texture);
+
+assets.newAsset("s_electronic", "../assets/audio/electronic.wav", Enum.AssetType.Audio);
+assets.newAsset("s_funk", "../assets/audio/funk.wav", Enum.AssetType.Audio);
+assets.newAsset("s_jazz", "../assets/audio/jazz.wav", Enum.AssetType.Audio);
+assets.newAsset("s_rock", "../assets/audio/rock.wav", Enum.AssetType.Audio);
+assets.newAsset("s_click", "../assets/audio/random/click.ogg", Enum.AssetType.Audio);
 
 const g = new VoxWheel({ assets: assets })
 
