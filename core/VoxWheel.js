@@ -192,6 +192,11 @@ export const Enum = {
         "Crosshair": "crosshair",
         "Grab": "grab",
         "None": "none"
+    },
+    "Color": {
+        "SelectButtonColor": 0xF7FF88,
+        "NormalButtonColor": 0xFFFFFF,
+        "SelectTextColor": 0xFAFA00,
     }
 }
 
@@ -269,10 +274,82 @@ export class Asset {
 export class AssetList {
     constructor() {
         this.assets = new Map();
+
+        this.sounds = new Map();
     }
 
     addAsset(asset) {
         this.assets.set(asset.id, asset);
+    }
+
+    registerSound(listener, asset, maxVoices = 10) {
+        this.sounds.set(asset.id, {
+            listener: listener,
+            asset: asset,
+            maxVoices: maxVoices,
+
+            Ambient: [this._createAmbientInstance(listener, asset)],
+            Positional: [this._createPositionalInstance(listener, asset)],
+
+            ambientIndex: 0,
+            positionalIndex: 0
+        });
+    }
+
+    _createAmbientInstance(listener, asset) {
+        const ambient = new THREE.Audio(listener);
+        ambient.setBuffer(asset.data);
+        return ambient;
+    }
+
+    _createPositionalInstance(listener, asset) {
+        const positional = new THREE.PositionalAudio(listener);
+        positional.setBuffer(asset.data);
+        return positional;
+    }
+
+    getAmbientSound(id) {
+        const soundData = this.sounds.get(id);
+        if (!soundData) return null;
+
+        const pool = soundData.Ambient;
+
+        for (let i = 0; i < pool.length; i++) {
+            if (!pool[i].isPlaying) return pool[i];
+        }
+
+        if (pool.length < soundData.maxVoices) {
+            const newVoice = this._createAmbientInstance(soundData.listener, soundData.asset);
+            pool.push(newVoice);
+            return newVoice;
+        }
+
+        const fallbackSound = pool[soundData.ambientIndex];
+        if (fallbackSound.isPlaying) fallbackSound.stop();
+        soundData.ambientIndex = (soundData.ambientIndex + 1) % pool.length;
+        return fallbackSound;
+    }
+
+    getPositionalSound(id) {
+        const soundData = this.sounds.get(id);
+        if (!soundData) return null;
+
+        const pool = soundData.Positional;
+
+        for (let i = 0; i < pool.length; i++) {
+            if (!pool[i].isPlaying) return pool[i];
+        }
+
+        if (pool.length < soundData.maxVoices) {
+            const newVoice = this._createPositionalInstance(soundData.listener, soundData.asset);
+            pool.push(newVoice);
+            return newVoice;
+        }
+
+        const fallbackSound = pool[soundData.positionalIndex];
+        if (fallbackSound.isPlaying) fallbackSound.stop();
+        soundData.positionalIndex = (soundData.positionalIndex + 1) % pool.length;
+        return fallbackSound;
     }
 
     newAsset(id, path, type) {
@@ -437,6 +514,7 @@ export class AssetManager {
                 asset.path,
                 (audioBuffer) => {
                     asset.data = audioBuffer;
+                    this.engine.assets.registerSound(this.engine.listener, asset);
                     resolve(audioBuffer);
                 },
                 undefined,
@@ -861,6 +939,179 @@ export class GUIImagePanel extends GUIDrawCommand {
 }
 
 
+export class GUITiledImagePanel extends GUIDrawCommand {
+    constructor(engine, image, x, y, w, h, patternScale = 1, rotation = 0, opacity = 1, patternOffsetX = 0, patternOffsetY = 0, patternRotation = 0) {
+        super();
+
+        this.asset_manager = engine.asset_manager;
+        this.image = image;
+
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+
+        this.patternScale = patternScale;
+        this.rotation = rotation;
+        this.opacity = opacity;
+
+        this.patternOffsetX = patternOffsetX;
+        this.patternOffsetY = patternOffsetY;
+        this.patternRotation = patternRotation;
+    }
+
+    render(ctx, element) {
+        if (!this.visible) return;
+
+        const image = this.image;
+        const targetX = element.globalX + this.x;
+        const targetY = element.globalY + this.y;
+        const totalPanelRotation = (element.globalRot + this.rotation) * deg2rad;
+
+        const srcW = image.width;
+        const srcH = image.height;
+
+        const tileW = srcW * this.patternScale;
+        const tileH = srcH * this.patternScale;
+
+        ctx.save();
+        ctx.globalAlpha = this.opacity;
+
+        if (totalPanelRotation !== 0) {
+            const centerX = targetX + this.w / 2;
+            const centerY = targetY + this.h / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(totalPanelRotation);
+            
+            ctx.beginPath();
+            ctx.rect(-this.w / 2, -this.h / 2, this.w, this.h);
+            ctx.clip();
+            ctx.translate(-this.w / 2, -this.h / 2);
+        } else {
+            ctx.beginPath();
+            ctx.rect(targetX, targetY, this.w, this.h);
+            ctx.clip();
+            ctx.translate(targetX, targetY);
+        }
+
+        if (this.patternRotation !== 0) {
+            ctx.rotate(this.patternRotation * deg2rad);
+        }
+
+        const startX = Math.floor(this.patternOffsetX * this.patternScale) % tileW;
+        const startY = Math.floor(this.patternOffsetY * this.patternScale) % tileH;
+
+        const boundSize = Math.max(this.w, this.h) * (this.patternRotation !== 0 ? 2.0 : 1.0);
+        const margin = (boundSize - this.w) / 2;
+
+        const drawMinX = -margin - tileW;
+        const drawMaxX = this.w + margin + tileW;
+        const drawMinY = -margin - tileH;
+        const drawMaxY = this.h + margin + tileH;
+
+        for (let offsetX = drawMinX + startX; offsetX < drawMaxX; offsetX += tileW) {
+            for (let offsetY = drawMinY + startY; offsetY < drawMaxY; offsetY += tileH) {
+                ctx.drawImage(
+                    image, 
+                    0, 0, srcW, srcH,
+                    offsetX, offsetY, tileW, tileH
+                );
+            }
+        }
+
+        ctx.restore();
+    }
+}
+
+
+export class GUITiledTexturePanel extends GUIDrawCommand {
+    constructor(engine, textureID, x, y, w, h, patternScale = 1, rotation = 0, opacity = 1, patternOffsetX = 0, patternOffsetY = 0, patternRotation = 0) {
+        super();
+
+        this.asset_manager = engine.asset_manager;
+        this.textureID = textureID;
+
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+
+        this.patternScale = patternScale;
+        this.rotation = rotation;
+        this.opacity = opacity;
+
+        this.patternOffsetX = patternOffsetX;
+        this.patternOffsetY = patternOffsetY;
+        this.patternRotation = patternRotation;
+    }
+
+    render(ctx, element) {
+        if (!this.visible) return;
+
+        const asset = this.asset_manager.getAsset(this.textureID);
+        if (!asset || !asset.isLoaded) return;
+
+        const image = asset.data.image;
+        const targetX = element.globalX + this.x;
+        const targetY = element.globalY + this.y;
+        const totalPanelRotation = (element.globalRot + this.rotation) * deg2rad;
+
+        const srcW = image.width;
+        const srcH = image.height;
+
+        const tileW = srcW * this.patternScale;
+        const tileH = srcH * this.patternScale;
+
+        ctx.save();
+        ctx.globalAlpha = this.opacity;
+
+        if (totalPanelRotation !== 0) {
+            const centerX = targetX + this.w / 2;
+            const centerY = targetY + this.h / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(totalPanelRotation);
+            
+            ctx.beginPath();
+            ctx.rect(-this.w / 2, -this.h / 2, this.w, this.h);
+            ctx.clip();
+            ctx.translate(-this.w / 2, -this.h / 2);
+        } else {
+            ctx.beginPath();
+            ctx.rect(targetX, targetY, this.w, this.h);
+            ctx.clip();
+            ctx.translate(targetX, targetY);
+        }
+
+        if (this.patternRotation !== 0) {
+            ctx.rotate(this.patternRotation * deg2rad);
+        }
+
+        const startX = Math.floor(this.patternOffsetX * this.patternScale) % tileW;
+        const startY = Math.floor(this.patternOffsetY * this.patternScale) % tileH;
+
+        const boundSize = Math.max(this.w, this.h) * (this.patternRotation !== 0 ? 2.0 : 1.0);
+        const margin = (boundSize - this.w) / 2;
+
+        const drawMinX = -margin - tileW;
+        const drawMaxX = this.w + margin + tileW;
+        const drawMinY = -margin - tileH;
+        const drawMaxY = this.h + margin + tileH;
+
+        for (let offsetX = drawMinX + startX; offsetX < drawMaxX; offsetX += tileW) {
+            for (let offsetY = drawMinY + startY; offsetY < drawMaxY; offsetY += tileH) {
+                ctx.drawImage(
+                    image, 
+                    0, 0, srcW, srcH,
+                    offsetX, offsetY, tileW, tileH
+                );
+            }
+        }
+
+        ctx.restore();
+    }
+}
+
+
 export class GUITextureSpritePanel extends GUIDrawCommand {
     constructor(engine, textureID, x, y, w, h, cords = [0, 0, 0, 0], rotation = 0, opacity = 1) {
         super();
@@ -1141,20 +1392,355 @@ export class GUIElement {
 }
 
 
+export class GUITexturePanelElement extends GUIElement {
+    constructor(screen, textureID, x = 0, y = 0, width = 100, height = 100, rotation = 0, opacity = 1) {
+        super(screen);
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.textureID = textureID;
+        this.rotation = rotation;
+        this.opacity = opacity;
+
+        this.scale = 1;
+
+        this.texturePanel = this.add(new GUITexturePanel(
+            this.engine,
+            textureID,
+            0,
+            0,
+            width,
+            height,
+            rotation,
+            opacity
+        ));
+    }
+
+    render(ctx) {
+        if (!this.visible) return;
+
+        this.texturePanel.w = this.width * this.scale;
+        this.texturePanel.h = this.height * this.scale;
+        this.texturePanel.textureID = this.textureID;
+        this.texturePanel.rotation = this.rotation;
+        this.texturePanel.opacity = this.opacity;
+        this.texturePanel.x = 0;
+        this.texturePanel.y = 0;
+
+        super.render(ctx);
+    }
+}
+
+
+export class GUIImagePanelElement extends GUIElement {
+    constructor(screen, image, x = 0, y = 0, width = 100, height = 100, rotation = 0, opacity = 1) {
+        super(screen);
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.image = image;
+        this.rotation = rotation;
+        this.opacity = opacity;
+
+        this.scale = 1;
+
+        this.imagePanel = this.add(new GUIImagePanel(
+            this.engine,
+            image,
+            0,
+            0,
+            width,
+            height,
+            rotation,
+            opacity
+        ));
+    }
+
+    render(ctx) {
+        if (!this.visible) return;
+
+        this.imagePanel.w = this.width * this.scale;
+        this.imagePanel.h = this.height * this.scale;
+        this.imagePanel.image = this.image;
+        this.imagePanel.rotation = this.rotation;
+        this.imagePanel.opacity = this.opacity;
+
+        this.imagePanel.x = 0;
+        this.imagePanel.y = 0;
+
+        super.render(ctx);
+    }
+}
+
+
+export class GUITiledImagePanelElement extends GUIElement {
+    constructor(screen, image, x = 0, y = 0, width = 100, height = 100, tileSize = 64, rotation = 0, opacity = 1, patternOffsetX = 0, patternOffsetY = 0, patternRotation = 0) {
+        super(screen);
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.image = image;
+        this.tileSize = tileSize;
+        this.rotation = rotation;
+        this.opacity = opacity;
+
+        this.patternOffsetX = patternOffsetX;
+        this.patternOffsetY = patternOffsetY;
+        this.patternRotation = patternRotation;
+
+        this.scale = 1;
+
+        this.tiledPanel = this.add(new GUITiledImagePanel(
+            this.engine,
+            image,
+            0,
+            0,
+            width,
+            height,
+            tileSize,
+            rotation,
+            opacity,
+            patternOffsetX,
+            patternOffsetY,
+            patternRotation
+        ));
+    }
+
+    render(ctx) {
+        if (!this.visible) return;
+
+        this.tiledPanel.w = this.width * this.scale;
+        this.tiledPanel.h = this.height * this.scale;
+        this.tiledPanel.image = this.image;
+        this.tiledPanel.tileSize = this.tileSize;
+        this.tiledPanel.rotation = this.rotation;
+        this.tiledPanel.opacity = this.opacity;
+
+        this.tiledPanel.patternOffsetX = this.patternOffsetX;
+        this.tiledPanel.patternOffsetY = this.patternOffsetY;
+        this.tiledPanel.patternRotation = this.patternRotation;
+
+        this.tiledPanel.x = 0;
+        this.tiledPanel.y = 0;
+
+        super.render(ctx);
+    }
+}
+
+
+export class GUITiledTexturePanelElement extends GUIElement {
+    constructor(screen, textureID, x = 0, y = 0, width = 100, height = 100, tileSize = 64, rotation = 0, opacity = 1, patternOffsetX = 0, patternOffsetY = 0, patternRotation = 0) {
+        super(screen);
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.textureID = textureID;
+        this.tileSize = tileSize;
+        this.rotation = rotation;
+        this.opacity = opacity;
+
+        this.patternOffsetX = patternOffsetX;
+        this.patternOffsetY = patternOffsetY;
+        this.patternRotation = patternRotation;
+
+        this.scale = 1;
+
+        this.tiledPanel = this.add(new GUITiledTexturePanel(
+            this.engine,
+            textureID,
+            0,
+            0,
+            width,
+            height,
+            tileSize,
+            rotation,
+            opacity,
+            patternOffsetX,
+            patternOffsetY,
+            patternRotation
+        ));
+    }
+
+    render(ctx) {
+        if (!this.visible) return;
+
+        this.tiledPanel.w = this.width * this.scale;
+        this.tiledPanel.h = this.height * this.scale;
+        this.tiledPanel.textureID = this.textureID;
+        this.tiledPanel.tileSize = this.tileSize;
+        this.tiledPanel.rotation = this.rotation;
+        this.tiledPanel.opacity = this.opacity;
+
+        this.tiledPanel.patternOffsetX = this.patternOffsetX;
+        this.tiledPanel.patternOffsetY = this.patternOffsetY;
+        this.tiledPanel.patternRotation = this.patternRotation;
+
+        this.tiledPanel.x = 0;
+        this.tiledPanel.y = 0;
+
+        super.render(ctx);
+    }
+}
+
+
+export class GUITextureSpritePanelElement extends GUIElement {
+    constructor(screen, textureID, x = 0, y = 0, width = 100, height = 100, cords = [0, 0, 0, 0], rotation = 0, opacity = 1) {
+        super(screen);
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.textureID = textureID;
+        this.cords = cords;
+        this.rotation = rotation;
+        this.opacity = opacity;
+
+        this.scale = 1;
+
+        this.spritePanel = this.add(new GUITextureSpritePanel(
+            this.engine,
+            textureID,
+            0,
+            0,
+            width,
+            height,
+            cords,
+            rotation,
+            opacity
+        ));
+    }
+
+    render(ctx) {
+        if (!this.visible) return;
+
+        this.spritePanel.w = this.width * this.scale;
+        this.spritePanel.h = this.height * this.scale;
+        this.spritePanel.textureID = this.textureID;
+        this.spritePanel.cords = this.cords;
+        this.spritePanel.rotation = this.rotation;
+        this.spritePanel.opacity = this.opacity;
+
+        this.spritePanel.x = 0;
+        this.spritePanel.y = 0;
+
+        super.render(ctx);
+    }
+}
+
+
+export class GUIColorPanelElement extends GUIElement {
+    constructor(screen, color = "#000000", x = 0, y = 0, width = 100, height = 100, rotation = 0, opacity = 1) {
+        super(screen);
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.color = color;
+        this.rotation = rotation;
+        this.opacity = opacity;
+
+        this.scale = 1;
+
+        this.colorPanel = this.add(new GUIColorPanel(
+            color,
+            0,
+            0,
+            width,
+            height,
+            rotation,
+            opacity
+        ));
+    }
+
+    render(ctx) {
+        if (!this.visible) return;
+
+        this.colorPanel.w = this.width * this.scale;
+        this.colorPanel.h = this.height * this.scale;
+        this.colorPanel.color = this.color;
+        this.colorPanel.rotation = this.rotation;
+        this.colorPanel.opacity = this.opacity;
+
+        this.colorPanel.x = 0;
+        this.colorPanel.y = 0;
+
+        super.render(ctx);
+    }
+}
+
+
+export class GUIBitmapTextElement extends GUIElement {
+    constructor(screen, text, x = 0, y = 0, rotation = 0, size = 5, color = 0xFFFFFF, shadow = true, opacity = 1, center = false) {
+        super(screen);
+        this.bitmap_font = this.engine.bitmap_font;
+        this.text = text;
+        this.shadow = shadow;
+        this.x = x;
+        this.y = y;
+        this.rotation = rotation;
+        this.size = size;
+        this.color = color;
+        this.opacity = opacity;
+        this.center = center;
+
+        this.bitmapText = this.add(new GUIBitmapText(this.engine, text, 0, 0, 0, size, color, shadow, opacity, center));
+    }
+
+    getTextWidth(text = this.text, scale = this.size) {
+        return this.bitmapText.getTextWidth(text, scale);
+    }
+
+    getTextHeight(scale = this.size) {
+        return scale * 8;
+    }
+
+    render(ctx) {
+        if (!this.visible) return;
+
+        this.bitmapText.text = this.text;
+        this.bitmapText.shadow = this.shadow;
+        this.bitmapText.size = this.size;
+        this.bitmapText.color = this.color;
+        this.bitmapText.opacity = this.opacity;
+        this.bitmapText.center = this.center;
+
+        this.bitmapText.rotation = 0;
+
+        super.render(ctx);
+    }
+}
+
+
 export class GUIButtonElement extends GUIElement {
-    constructor(screen, text = "Button", x = 0, y = 0, width = 200, height = 20) {
+    constructor(screen, text = "Button", x = 0, y = 0, width = 200, height = 20, affectCursor = false) {
         super(screen);
 
         this.input = this.engine.input;
 
         this.normal = [0, 66, 200, 20];
         this.hovered = [0, 86, 200, 20];
-        this.disabled = [0, 456, 200, 20];
+        this.disabled = [0, 46, 200, 20];
 
         this.state = this.normal;
 
+        this.interactState = "none";
+        this.pushState = false;
+        this.pushHoverState = false;
+
         this.mouseHover = false;
         this.mousePress = false;
+
+        this.affectCursor = affectCursor;
 
         this.text = text;
 
@@ -1172,9 +1758,6 @@ export class GUIButtonElement extends GUIElement {
             this.engine.playSound("s_click");
         })
 
-        this.oldMousePress = false;
-        this.oldHover = false;
-
         this.scale = 3;
 
         this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.state);
@@ -1183,49 +1766,254 @@ export class GUIButtonElement extends GUIElement {
 
     render(ctx) {
         const mpos = this.input.getInputState("Mouse_Position") || { x: 999999, y: 999999 };
-
         const mbuttonDown = this.input.getInputState("Mouse_Button_0") || false;
-
         const mtriggerActive = this.input.getInputState("Mouse_Trigger_0") || false;
 
         this.sprite.x = -(this.width * this.scale / 2);
         this.sprite.y = -(this.height * this.scale / 2);
 
         this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
-
-        this.mousePress = this.mouseHover && mbuttonDown;
+        this.mousePress = mbuttonDown;
 
         if (this.mouseHover) {
-            this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Grab);
             if (this.mousePress) {
-                this.state = this.hovered;
-                this.title.color = 0xFAFA00;
+                if (this.interactState == "hover" && mtriggerActive) {
+                    this.interactState = "push";
+                    this.state = this.hovered;
+                    this.title.color = Enum.Color.SelectButtonColor;
+                }
+
+                if (this.interactState == "none") {
+                    this.interactState = "hover";
+                    this.state = this.hovered;
+                    this.title.color = Enum.Color.SelectButtonColor;
+
+                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
+                    this.onHover.runAll();
+                    if (this.affectCursor) {
+                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                    }
+                }
+
+                if (this.interactState == "push" && this.pushState == false) {
+                    this.pushState = true;
+
+                    this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
+                    this.engine.input_manager.mouseGUIButtonElementClick.runAll(this);
+                    this.onClick.runAll();
+                    if (this.mouseHover && this.screen == this.engine.screen && this.affectCursor) {
+                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                    }
+                }
             } else {
-                this.state = this.hovered;
-                this.title.color = 0xFAFA00;
+                if (this.interactState == "none" || this.interactState == "push") {
+                    this.interactState = "hover";
+
+                    this.state = this.hovered;
+                    this.title.color = Enum.Color.SelectButtonColor;
+
+                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
+                    this.onHover.runAll();
+
+                    if (this.affectCursor) {
+                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                    }
+                }
+                if (this.interactState == "hover" && this.pushState == true) {
+                    this.pushState = false;
+
+                    this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
+                    this.onRelease.runAll();
+                }
             }
         } else {
-            this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.None);
-            this.state = this.normal;
-            this.title.color = 0xFFFFFF;
-        }
+            if (this.interactState == "hover" || this.interactState == "push") {
+                this.interactState = "none";
 
-        if (this.mouseHover && mtriggerActive) {
-            this.onClick.runAll();
-        }
+                this.state = this.normal;
+                this.title.color = Enum.Color.NormalButtonColor;
 
-        if (this.oldHover != this.mouseHover) {
-            this.oldHover = this.mouseHover;
-            if (this.mouseHover) {
-                this.onHover.runAll();
-            } else {
+                this.engine.input_manager.mouseGUIButtonElementUnHover.runAll(this);
                 this.onUnHover.runAll();
+
+                if (this.affectCursor) {
+                    this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
+                }
+            }
+            if (this.pushState == true) {
+                this.pushState = false;
+                this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
+                this.onRelease.runAll();
             }
         }
 
         this.sprite.cords = this.state;
         this.sprite.w = this.width * this.scale;
         this.sprite.h = this.height * this.scale;
+
+        this.title.x = 0 - this.title.getTextWidth() / 2;
+        this.title.y = 0 - this.title.getTextHeight() / 2;
+
+        super.render(ctx);
+    }
+}
+
+
+export class GUISliderElement extends GUIElement {
+    constructor(screen, title = "Slider", texts = { 50: "Normal" }, start = 0, stop = 100, step = 1, value = 50, x = 0, y = 0, width = 200, height = 20, affectCursor = false) {
+        super(screen);
+
+        this.input = this.engine.input;
+
+        this.bg = [0, 46, 200, 20];
+        this.knob = [201, 45, 8, 22];
+
+        this.interactState = "none";
+        this.pushState = false;
+        this.pushHoverState = false;
+
+        this.mouseHover = false;
+        this.mousePress = false;
+
+        this.affectCursor = true;
+
+        this.texts = texts;
+        this.titletext = title;
+
+        this.start = start;
+        this.stop = stop;
+        this.step = step;
+        this.value = value;
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+
+        this.onClick = new EventList();
+        this.onRelease = new EventList();
+        this.onHover = new EventList();
+        this.onUnHover = new EventList();
+        this.onSlide = new EventList();
+
+        this.scale = 3;
+
+        this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.bg);
+        this.knobsprite = this.addTextureSpritePanel("gui", -(this.width / 200 * 8 * this.scale / 2), -(this.height / 20 * 22 * this.scale / 2), 8, 21, this.knob);
+        this.title = this.addBitmapText(this.titletext + " : " + this.value, 0 + (this.width * this.scale / 2), 0, 0, 1.25 * this.scale);
+    }
+
+    render(ctx) {
+        const mpos = this.input.getInputState("Mouse_Position") || { x: 999999, y: 999999 };
+        const mbuttonDown = this.input.getInputState("Mouse_Button_0") || false;
+        const mtriggerActive = this.input.getInputState("Mouse_Trigger_0") || false;
+
+        this.sprite.w = this.width * this.scale;
+        this.sprite.h = this.height * this.scale;
+
+        this.knobsprite.w = 8 * this.scale;
+        this.knobsprite.h = 22 * this.scale;
+
+        this.sprite.x = -(this.sprite.w / 2);
+        this.sprite.y = -(this.sprite.h / 2);
+
+        this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
+        this.mousePress = mbuttonDown;
+
+        if (this.mouseHover) {
+            if (this.mousePress) {
+                if (this.interactState == "hover" && mtriggerActive) {
+                    this.interactState = "push";
+                    this.title.color = Enum.Color.SelectButtonColor;
+                    if (this.affectCursor) this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Grab);
+                }
+
+                if (this.interactState == "none") {
+                    this.interactState = "hover";
+                    this.title.color = Enum.Color.SelectButtonColor;
+                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
+                    this.onHover.runAll();
+                    if (this.affectCursor) this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                }
+            } else {
+                if (this.interactState == "none" || this.interactState == "push") {
+                    this.interactState = "hover";
+                    this.title.color = Enum.Color.SelectButtonColor;
+                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
+                    this.onHover.runAll();
+                    if (this.affectCursor) this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                }
+                if (this.pushState) {
+                    this.pushState = false;
+                    this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
+                    this.onRelease.runAll();
+                }
+            }
+        } else {
+            if (this.interactState == "push" && !this.mousePress) {
+                this.interactState = "none";
+                this.title.color = Enum.Color.NormalButtonColor;
+                this.engine.input_manager.mouseGUIButtonElementUnHover.runAll(this);
+                this.onUnHover.runAll();
+                if (this.affectCursor) this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
+            } else if (this.interactState == "hover") {
+                this.interactState = "none";
+                this.title.color = Enum.Color.NormalButtonColor;
+                this.engine.input_manager.mouseGUIButtonElementUnHover.runAll(this);
+                this.onUnHover.runAll();
+                if (this.affectCursor) this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
+            }
+
+            if (!this.mousePress && this.pushState) {
+                this.pushState = false;
+                this.interactState = "none";
+                this.title.color = Enum.Color.NormalButtonColor;
+                this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
+                this.onRelease.runAll();
+            }
+        }
+
+        const halfSlider = this.sprite.w / 2;
+        const minKnobX = -halfSlider;
+        const maxKnobX = halfSlider - this.knobsprite.w;
+        const totalTravelDistance = maxKnobX - minKnobX;
+
+        if (this.interactState == "push") {
+            if (this.pushState == false) {
+                this.pushState = true;
+                this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
+                this.engine.input_manager.mouseGUIButtonElementClick.runAll(this);
+                this.onClick.runAll();
+                this.engine.playSound("s_click");
+                if (this.mouseHover && this.screen == this.engine.screen && this.affectCursor) {
+                    this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                }
+            }
+
+            const clickXInsideSlider = mpos.x - (this.x + minKnobX) - this.knobsprite.w / 2;
+
+            let percentage = clickXInsideSlider / totalTravelDistance;
+            percentage = Math.max(0, Math.min(1, percentage));
+
+            const rawValue = this.start + percentage * (this.stop - this.start);
+
+            let steppedValue = Math.round(rawValue / this.step) * this.step;
+
+            this.value = Math.max(this.start, Math.min(this.stop, steppedValue));
+
+            this.onSlide.runAll(this.value);
+        }
+
+        const currentPercentage = (this.value - this.start) / (this.stop - this.start);
+        this.knobsprite.x = minKnobX + (currentPercentage * totalTravelDistance);
+
+        const specialText = this.texts[this.value];
+
+        if (specialText) {
+            this.title.text = specialText
+        } else {
+            this.title.text = this.titletext + " : " + this.value;
+        }
 
         this.title.x = 0 - this.title.getTextWidth() / 2;
         this.title.y = 0 - this.title.getTextHeight() / 2;
@@ -1256,8 +2044,40 @@ export class Screen {
         return element;
     }
 
-    addButton(text, x, y, width, height) {
-        return this.addElement(new GUIButtonElement(this, text, x, y, width, height));
+    addColorPanel(color, x, y, width, height, rotation, opacity) {
+        return this.addElement(new GUIColorPanelElement(this, color, x, y, width, height, rotation, opacity));
+    }
+
+    addTexturePanel(textureID, x, y, width, height, rotation, opacity) {
+        return this.addElement(new GUITexturePanelElement(this, textureID, x, y, width, height, rotation, opacity));
+    }
+
+    addImagePanel(image, x, y, width, height, rotation, opacity) {
+        return this.addElement(new GUIImagePanelElement(this, image, x, y, width, height, rotation, opacity));
+    }
+
+    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) {
+        return this.addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation));        
+    }
+
+    addTiledTexturePanel(textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) {
+        return this.addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation));        
+    }
+
+    addTextureSpritePanel(textureID, x, y, width, height, cords, rotation, opacity) {
+        return this.addElement(new GUITextureSpritePanelElement(this, textureID, x, y, width, height, cords, rotation, opacity));
+    }
+
+    addBitmapText(text, x, y, rotation, size, color, shadow, opacity, center) {
+        return this.addElement(new GUIBitmapTextElement(this, text, x, y, rotation, size, color, shadow, opacity, center));
+    }
+
+    addButton(text, x, y, width, height, affectCursor) {
+        return this.addElement(new GUIButtonElement(this, text, x, y, width, height, affectCursor));
+    }
+
+    addSlider(title, texts, start, stop, step, value, x, y, width, height, affectCursor) {
+        return this.addElement(new GUISliderElement(this, title, texts, start, stop, step, value, x, y, width, height, affectCursor));
     }
 
     init() {
@@ -1282,26 +2102,19 @@ export class AssetLoadingScreen extends Screen {
             this.render(this.engine.ctx);
         });
 
-        const rect = new GUIElement(this);
-        rect.add(new GUIColorPanel("red", 0, 0, 2560, 1440));
-        rect.add(new GUIBitmapText(this.engine, "Minecraft asset loading", 15, 15, 0, 16));
-
-        this.Pic = new GUITexturePanel(this.engine, "terrain", 100, 400, 900, 500);
-        rect.add(this.Pic);
-
-        this.Text = new GUIBitmapText(this.engine, "", 10, 320, 0, 5, 0x777777);
-        rect.add(this.Text);
-
-        this.addElement(rect);
+        this.addColorPanel("black", 0, 0, 2560, 1440);
+        this.addBitmapText("Minecraft asset loading", 15, 15, 0, 16);
+        this.Pic = this.addTexturePanel("terrain", 100, 400, 900, 500);
+        this.Text = this.addBitmapText("", 10, 320, 0, 5, 0x777777);
     }
 
     assetLoaded(progress) {
         this.Text.text = `Loaded: ${progress.asset.path} (${Math.round(progress.value * 100)}%)`;
 
         if (progress.asset.type == Enum.AssetType.Texture) {
-            this.Pic.textureID = progress.asset.id;
+            //this.Pic.textureID = progress.asset.id;
         } else {
-            this.Pic.textureID = "pack";
+            //this.Pic.textureID = "pack";
         }
     }
 }
@@ -1311,27 +2124,20 @@ export class LogoScreen extends Screen {
     constructor(engine) {
         super(engine);
 
-        const rect = new GUIElement(this);
-        rect.add(new GUIColorPanel("black", 0, 0, 2560, 1440));
-        rect.add(new GUIBitmapText(this.engine, "Logo", 15, 15, 0, 16));
-
-        this.Pic = new GUITexturePanel(this.engine, "font", -500, 500, 5000, 500);
-        rect.add(this.Pic);
-
-        this.Text = new GUIBitmapText(this.engine, "num", 10, 320, 0, 10, 0x777777);
-        rect.add(this.Text);
-
-        this.addElement(rect);
+        this.addColorPanel("black", 0, 0, 2560, 1440);
+        this.addBitmapText("Logo", 15, 15, 0, 16);
+        //this.Pic = this.addTexturePanel("font", -500, 500, 5000, 500);
+        //this.Text = this.addBitmapText("num", 10, 320, 0, 10, 0x777777);
 
         this.renderTime = 0;
     }
 
     render(ctx) {
         this.renderTime++;
-        this.Text.text = this.renderTime.toString();
+        //this.Text.text = this.renderTime.toString();
 
-        if (this.renderTime > 250) {
-            this.engine.setScreen(new MenuScreen(this.engine));
+        if (this.renderTime > 50) {
+            this.engine.setScreen(this.engine.menuScreen);
         }
 
         super.render(ctx);
@@ -1351,27 +2157,20 @@ export class MenuScreen extends Screen {
         this.splashTextStr = engine.splash;
         this.gradientImage = createOverlayGradient(canvasW, canvasH);
 
-        const rect = new GUIElement(this);
-        const backgroundOverlay = new GUIElement(this);
+        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.2);
+        this.addTexturePanel("logo", canvasW / 2 - 500, 100, 1000, 170);
 
-        backgroundOverlay.add(new GUIImagePanel(this.engine, this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.2));
+        this.splashText = this.addBitmapText(this.splashTextStr, centerX + 350, 250, -20, 5, 0xFFFF00, true, 1, true);
 
-        this.splashText = new GUIBitmapText(this.engine, this.splashTextStr, centerX + 350, 250, -20, 5, 0xFFFF00, true, 1, true);
-
-        rect.add(new GUITexturePanel(this.engine, "logo", canvasW / 2 - 500, 100, 1000, 170));
-        rect.add(new GUIBitmapText(this.engine, "by Fraeric123", 2195, 1395, 0, 5));
-        rect.add(new GUIBitmapText(this.engine, "not Minecraft 1.0.0", 10, 1395, 0, 5));
-        rect.add(this.splashText);
-
-        this.addElement(backgroundOverlay);
-        this.addElement(rect);
+        this.addBitmapText("by Fraeric123", 2195, 1395, 0, 5);
+        this.addBitmapText("not Minecraft 1.0.0", 10, 1395, 0, 5);
 
         const playBut = this.addButton("Play", centerX, centerY - 100);
-        const settingsBut = this.addButton("Settings", centerX, centerY - 30);
+        const optionsBut = this.addButton("Options", centerX, centerY - 30);
         const exitBut = this.addButton("Exit", centerX, centerY + 40);
 
-        settingsBut.onClick.addEvent(() => {
-            engine.setScreen(new SettingsScreen(engine));
+        optionsBut.onClick.addEvent(() => {
+            engine.setScreen(engine.optionsScreen);
         })
 
         exitBut.onClick.addEvent(() => {
@@ -1397,10 +2196,10 @@ export class MenuScreen extends Screen {
     }
 
     render(ctx) {
-        const rotX = (Math.sin(Date.now() / 10 / 400) * 25 + 20) * deg2rad;
-        const rotY = (-Date.now() / 10 * 0.1) * deg2rad;
+        const rotX = (Math.sin(this.engine.ms() / 10 / 400) * 25 + 20) * deg2rad;
+        const rotY = (-this.engine.ms() / 10 * 0.1) * deg2rad;
 
-        const timeMs = Date.now() % 1000;
+        const timeMs = this.engine.ms() % 1000;
         const wave = Math.abs(Math.sin((timeMs / 1000) * Math.PI * 2));
         const scaleFactor = 1.8 - wave * 0.1;
 
@@ -1414,7 +2213,7 @@ export class MenuScreen extends Screen {
 }
 
 
-export class SettingsScreen extends Screen {
+export class OptionsScreen extends Screen {
     constructor(engine) {
         super(engine);
 
@@ -1425,20 +2224,17 @@ export class SettingsScreen extends Screen {
 
         this.gradientImage = createOverlayGradient(canvasW, canvasH);
 
-        const rect = new GUIElement(this);
-        const backgroundOverlay = new GUIElement(this);
-
-        backgroundOverlay.add(new GUIImagePanel(this.engine, this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.2));
-
-        rect.add(new GUIBitmapText(this.engine, "Settings", centerX, 150, 0, 5, 0xFFFFFF, true, 1, true));
-
-        this.addElement(backgroundOverlay);
-        this.addElement(rect);
-
+        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.2);
+        this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 10, 0);
+        this.addBitmapText("Options", centerX, 150, 0, 5, 0xFFFFFF, true, 1, true);
         const backBut = this.addButton("Back", centerX - 960, 400);
+        const masterVolumeSlider = this.addSlider("MasterVolume", {}, 0, 100, 1, this.engine.config.data.MasterVolume, centerX, 400, 400, 20);
 
+        masterVolumeSlider.onSlide.addEvent((vol) => {
+            engine.config.data.MasterVolume = vol;
+        })
         backBut.onClick.addEvent(() => {
-            engine.setScreen(new MenuScreen(engine));
+            engine.setScreen(engine.menuScreen);
         })
     }
 
@@ -1460,8 +2256,8 @@ export class SettingsScreen extends Screen {
     }
 
     render(ctx) {
-        const rotX = (Math.sin(Date.now() / 10 / 400) * 25 + 20) * deg2rad;
-        const rotY = (-Date.now() / 10 * 0.1) * deg2rad;
+        const rotX = (Math.sin(this.engine.ms() / 10 / 400) * 25 + 20) * deg2rad;
+        const rotY = (-this.engine.ms() / 10 * 0.1) * deg2rad;
 
         this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
 
@@ -1512,19 +2308,8 @@ export class CanvasRenderer {
         window.addEventListener('resize', this.resize);
     }
 
-    /**
- * Změní kurzor nad zadaným canvasem.
- * @param {HTMLCanvasElement|string} canvasOrId - Element canvasu nebo jeho ID.
- * @param {string} cursorType - Typ kurzoru (např. 'pointer', 'default', 'crosshair', 'grab', 'none')
- */
-    setCanvasCursor(canvasOrId, cursorType) {
-        const canvas = typeof canvasOrId === 'string'
-            ? document.getElementById(canvasOrId)
-            : canvasOrId;
-
-        if (canvas) {
-            canvas.style.cursor = cursorType;
-        }
+    setCanvasCursor(cursorType) {
+        this.canvas.style.cursor = cursorType;
     }
 
     resize() {
@@ -1620,6 +2405,13 @@ export class InputManager extends Manager {
         this.mouseMoved = new EventList();
         this.mouseButtonPressed = new EventList();
         this.mouseButtonReleased = new EventList();
+
+        this.mouseGUIButtonElementClick = new EventList();
+        this.mouseGUIButtonElementRelease = new EventList();
+        this.mouseGUIButtonElementHover = new EventList();
+        this.mouseGUIButtonElementUnHover = new EventList();
+
+        this.mouseGUIButtonElementInteract = null;
 
         this.previousInputs = new Map();
     }
@@ -1747,6 +2539,21 @@ export class RenderState {
 
 
 
+export class ConfigList {
+    constructor() {
+        this.data = {
+            "MasterVolume": 100,
+            "Music": 100
+        }
+    }
+}
+
+
+
+
+
+
+
 
 export class VoxWheel {
     constructor({ assets = new AssetList() }) {
@@ -1771,6 +2578,7 @@ export class VoxWheel {
         this.canvas_renderer = new CanvasRenderer(this);
 
         this.input = new InputList();
+        this.config = new ConfigList();
         this.input_manager = new InputManager(this);
 
         this.listener = new THREE.AudioListener();
@@ -1790,16 +2598,75 @@ export class VoxWheel {
         this.screen = null;
 
         this.bitmap_font = new BitmapFont(this, "font");
+
+        this.date = new Date();        
+        
+        this.assetLoadingScreen = new AssetLoadingScreen(this);
+        this.logoScreen = new LogoScreen(this);
+        this.menuScreen = new MenuScreen(this);
+        this.optionsScreen = new OptionsScreen(this);
+    }
+
+    ms() {
+        return performance.now();
+    }
+
+    _getLogarithmicVolume(relativeVolume) {
+        const linearMaster = this.config.data.MasterVolume / 100;
+        const combinedLinear = relativeVolume * linearMaster;
+        return Math.pow(combinedLinear, 3);
     }
 
     playSound(soundID, volume = 1, speed = 1, time = 0) {
         const asset = this.asset_manager.getAsset(soundID);
-        if (asset && asset.isLoaded) {
-            const sound = new THREE.Audio(this.listener);
-            sound.setBuffer(asset.data);
-            sound.setVolume(volume);
+        if (!asset || !asset.isLoaded) return;
+
+        const finalVolume = this._getLogarithmicVolume(volume);
+        if (finalVolume <= 0) return;
+
+        const sound = this.assets.getAmbientSound(soundID);
+        if (sound) {
+            if (sound.isPlaying) sound.stop();
+
+            sound.setVolume(finalVolume);
             sound.setPlaybackRate(speed);
             sound.play(time);
+        }
+    }
+
+    playPositionalSound(soundID, positionOrObject, volume = 1, refDistance = 1, maxDistance = 100, speed = 1, time = 0) {
+        const asset = this.asset_manager.getAsset(soundID);
+        if (!asset || !asset.isLoaded) return;
+
+        const finalVolume = this._getLogarithmicVolume(volume);
+        if (finalVolume <= 0) return;
+
+        const sound = this.assets.getPositionalSound(soundID);
+        if (!sound) return;
+
+        if (sound.isPlaying) sound.stop();
+
+        sound.setRefDistance(refDistance);
+        sound.setMaxDistance(maxDistance);
+        sound.setVolume(finalVolume);
+        sound.setPlaybackRate(speed);
+
+        if (positionOrObject instanceof THREE.Object3D) {
+            positionOrObject.add(sound);
+            sound.play(time);
+        } else if (positionOrObject && typeof positionOrObject.x === 'number') {
+            const dummyTarget = new THREE.Object3D();
+            dummyTarget.position.copy(positionOrObject);
+            this.scene.add(dummyTarget);
+
+            dummyTarget.add(sound);
+            sound.play(time);
+
+            const duration = (sound.buffer.duration / speed) * 1000;
+            setTimeout(() => {
+                dummyTarget.remove(sound);
+                this.scene.remove(dummyTarget);
+            }, duration + 200);
         }
     }
 
@@ -1837,11 +2704,11 @@ export class VoxWheel {
     async init() {
         console.log("initializing..")
 
-        this.setScreen(new AssetLoadingScreen(this));
+        this.setScreen(this.assetLoadingScreen);
 
         await this.asset_manager.loadAll();
 
-        this.setScreen(new LogoScreen(this));
+        this.setScreen(this.logoScreen);
 
         this.input_manager.init();
     }
@@ -1889,6 +2756,7 @@ assets.newAsset("logo", "../assets/textures/mclogo.png", Enum.AssetType.Texture)
 assets.newAsset("pack", "../assets/textures/pack.png", Enum.AssetType.Texture);
 assets.newAsset("gui", "../assets/textures/gui/gui.png", Enum.AssetType.Texture);
 assets.newAsset("icons", "../assets/textures/gui/icons.png", Enum.AssetType.Texture);
+assets.newAsset("dirt", "../assets/textures/dirt.png", Enum.AssetType.Texture);
 
 assets.newAsset("s_electronic", "../assets/audio/electronic.wav", Enum.AssetType.Audio);
 assets.newAsset("s_funk", "../assets/audio/funk.wav", Enum.AssetType.Audio);
