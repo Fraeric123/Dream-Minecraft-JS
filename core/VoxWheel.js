@@ -2958,6 +2958,24 @@ export class OptionsScreen extends Screen {
 }
 
 
+export class WorldSelectScreen extends Screen {
+    constructor(engine) {
+        super(engine);
+
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+        const down = 1440;
+        const up = 0;
+        const left = 2560;
+        const right = 0;
+
+        
+    }
+}
+
+
 
 
 
