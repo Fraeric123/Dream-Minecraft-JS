@@ -197,6 +197,78 @@ export const Enum = {
         "SelectButtonColor": 0xF7FF88,
         "NormalButtonColor": 0xFFFFFF,
         "SelectTextColor": 0xFAFA00,
+    },
+    "Difficulty": {
+        "Peaceful": 0,
+        "Easy": 1,
+        "Normal": 2,
+        "Hard": 3
+    },
+    "Graphics": {
+        "Fast": 0,
+        "Fancy": 1
+    },
+    "RenderDistance": {
+        "Short": 0,
+        "Tiny": 1,
+        "Normal": 2,
+        "Far": 3
+    },
+    "Performance": {
+        "PowerSaver": 0,
+        "Balanced": 1,
+        "MaxFPS": 2,
+    },
+    "GUIScale": {
+        "Auto": 0,
+        "Small": 1,
+        "Normal": 2,
+        "Large": 3
+    },
+    "Particles": {
+        "Minimal": 0,
+        "Decreased": 1,
+        "All": 2,
+    },
+    "Controls": {
+        "Q": "KeyQ",
+        "W": "KeyW",
+        "E": "KeyE",
+        "R": "KeyR",
+        "T": "KeyT",
+        "Y": "KeyY",
+        "U": "KeyU",
+        "I": "KeyI",
+        "O": "KeyO",
+        "P": "KeyP",
+        "A": "KeyA",
+        "S": "KeyS",
+        "D": "KeyD",
+        "F": "KeyF",
+        "G": "KeyG",
+        "H": "KeyH",
+        "J": "KeyJ",
+        "K": "KeyK",
+        "L": "KeyL",
+        "Z": "KeyZ",
+        "X": "KeyX",
+        "C": "KeyC",
+        "V": "KeyV",
+        "B": "KeyB",
+        "N": "KeyN",
+        "M": "KeyM",
+        "SPACE": "Space",
+        "BACKSPACE": "Backspace",
+        "ENTER": "Enter",
+        "LSHIFT": "LeftShift",
+        "RSHIFT": "RightShift",
+        "LCONTROL": "LeftControl",
+        "RCONTROL": "RightControl",
+        "ESCAPE": "Esc",
+        "TAB": "Tab",
+        "Button 1": "button1",
+        "Button 2": "button2",
+        "Button 3": "button3",
     }
 }
 
@@ -309,7 +381,7 @@ export class AssetList {
     }
 
     getAmbientSound(id) {
-        const soundData = this.sounds.get(id);
+        const soundData = this.sounds.get("s_" + id);
         if (!soundData) return null;
 
         const pool = soundData.Ambient;
@@ -331,7 +403,7 @@ export class AssetList {
     }
 
     getPositionalSound(id) {
-        const soundData = this.sounds.get(id);
+        const soundData = this.sounds.get("s_" + id);
         if (!soundData) return null;
 
         const pool = soundData.Positional;
@@ -353,9 +425,33 @@ export class AssetList {
     }
 
     newAsset(id, path, type) {
-        const asset = new Asset(id, path, type);
+        let newid = id;
+        switch (type) {
+            case Enum.AssetType.Audio:   newid = "s_" + id; break;            
+            case Enum.AssetType.HDR:     newid = "h_" + id; break;
+            case Enum.AssetType.Model:   newid = "m_" + id; break;            
+            case Enum.AssetType.Texture: newid = "t_" + id; break;
+        }
+        const asset = new Asset(newid, path, type);
         this.addAsset(asset);
         return asset;
+    }
+
+    get(id, type = 1) {
+        let prefix = "";
+        switch (type) {
+            case Enum.AssetType.Audio:   prefix = "s_"; break;
+            case Enum.AssetType.HDR:     prefix = "h_"; break;
+            case Enum.AssetType.Model:   prefix = "m_"; break;
+            case Enum.AssetType.Texture: prefix = "t_"; break;
+        }
+        
+        return this.assets.get(prefix + id) || null;
+    }
+
+    getData(id, type) {
+        const asset = this.get(id, type);
+        return asset ? asset.data : null;
     }
 
     getAssetById(id) {
@@ -462,12 +558,12 @@ export class AssetManager {
         this.onFinished.runAll();
     }
 
-    get(id) {
-        return this.engine.assets.getAssetDataById(id);
+    get(id, type = 1) {
+        return this.engine.assets.getData(id, type);
     }
 
-    getAsset(id) {
-        return this.engine.assets.getAssetById(id);
+    getAsset(id, type = 1) {
+        return this.engine.assets.get(id, type);
     }
 
     getProgress() {
@@ -787,6 +883,64 @@ export class GUIDrawCommand {
     render(ctx, element) { }
 }
 
+export class GUIBlurPanel extends GUIDrawCommand {
+    constructor(intensity = 10, x = 0, y = 0, w = 200, h = 200, rotation = 0, opacity = 1) {
+        super();
+
+        this.intensity = intensity;
+
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+
+        this.rotation = rotation;
+        this.opacity = opacity;
+    }
+
+    render(ctx, element) {
+        if (!this.visible) return;
+
+        const targetX = element.globalX + this.x;
+        const targetY = element.globalY + this.y;
+        const totalRotation = (element.globalRot + this.rotation) * deg2rad;
+
+        ctx.save();
+        ctx.globalAlpha = this.opacity;
+
+        if (totalRotation !== 0) {
+            const centerX = targetX + this.w / 2;
+            const centerY = targetY + this.h / 2;
+            ctx.translate(centerX, centerY);
+            ctx.rotate(totalRotation);
+            ctx.translate(-this.w / 2, -this.h / 2);
+        } else {
+            ctx.translate(targetX, targetY);
+        }
+
+        ctx.beginPath();
+        ctx.rect(0, 0, this.w, this.h);
+        ctx.clip();
+
+        ctx.save();
+        if (totalRotation !== 0) {
+            const centerX = targetX + this.w / 2;
+            const centerY = targetY + this.h / 2;
+            ctx.translate(this.w / 2, this.h / 2);
+            ctx.rotate(-totalRotation);
+            ctx.translate(-centerX, -centerY);
+        } else {
+            ctx.translate(-targetX, -targetY);
+        }
+
+        ctx.filter = `blur(${this.intensity}px)`;
+        ctx.drawImage(ctx.canvas, 0, 0);
+
+        ctx.restore();
+        ctx.restore();
+    }
+}
+
 
 export class GUIColorPanel extends GUIDrawCommand {
     constructor(color, x, y, w, h, rotation = 0, opacity = 1) {
@@ -982,7 +1136,7 @@ export class GUITiledImagePanel extends GUIDrawCommand {
             const centerY = targetY + this.h / 2;
             ctx.translate(centerX, centerY);
             ctx.rotate(totalPanelRotation);
-            
+
             ctx.beginPath();
             ctx.rect(-this.w / 2, -this.h / 2, this.w, this.h);
             ctx.clip();
@@ -1012,7 +1166,7 @@ export class GUITiledImagePanel extends GUIDrawCommand {
         for (let offsetX = drawMinX + startX; offsetX < drawMaxX; offsetX += tileW) {
             for (let offsetY = drawMinY + startY; offsetY < drawMaxY; offsetY += tileH) {
                 ctx.drawImage(
-                    image, 
+                    image,
                     0, 0, srcW, srcH,
                     offsetX, offsetY, tileW, tileH
                 );
@@ -1070,7 +1224,7 @@ export class GUITiledTexturePanel extends GUIDrawCommand {
             const centerY = targetY + this.h / 2;
             ctx.translate(centerX, centerY);
             ctx.rotate(totalPanelRotation);
-            
+
             ctx.beginPath();
             ctx.rect(-this.w / 2, -this.h / 2, this.w, this.h);
             ctx.clip();
@@ -1100,7 +1254,7 @@ export class GUITiledTexturePanel extends GUIDrawCommand {
         for (let offsetX = drawMinX + startX; offsetX < drawMaxX; offsetX += tileW) {
             for (let offsetY = drawMinY + startY; offsetY < drawMaxY; offsetY += tileH) {
                 ctx.drawImage(
-                    image, 
+                    image,
                     0, 0, srcW, srcH,
                     offsetX, offsetY, tileW, tileH
                 );
@@ -1218,7 +1372,7 @@ export class GUIClipBegin extends GUIDrawCommand {
 }
 
 
-export class GUIClipEnd extends GUIDrawCommand {
+export class GUIEnd extends GUIDrawCommand {
     render(ctx) {
         ctx.restore();
     }
@@ -1637,6 +1791,48 @@ export class GUITextureSpritePanelElement extends GUIElement {
 }
 
 
+export class GUIBlurPanelElement extends GUIElement {
+    constructor(screen, intensity = 10, x = 0, y = 0, width = 100, height = 100, rotation = 0, opacity = 1) {
+        super(screen);
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+        this.intensity = intensity;
+        this.rotation = rotation;
+        this.opacity = opacity;
+
+        this.scale = 1;
+
+        this.blurPanel = this.add(new GUIBlurPanel(
+            intensity,
+            0,
+            0,
+            width,
+            height,
+            rotation,
+            opacity
+        ));
+    }
+
+    render(ctx) {
+        if (!this.visible) return;
+
+        this.blurPanel.w = this.width * this.scale;
+        this.blurPanel.h = this.height * this.scale;
+        this.blurPanel.color = this.color;
+        this.blurPanel.rotation = this.rotation;
+        this.blurPanel.opacity = this.opacity;
+
+        this.blurPanel.x = 0;
+        this.blurPanel.y = 0;
+
+        super.render(ctx);
+    }
+}
+
+
 export class GUIColorPanelElement extends GUIElement {
     constructor(screen, color = "#000000", x = 0, y = 0, width = 100, height = 100, rotation = 0, opacity = 1) {
         super(screen);
@@ -1680,7 +1876,7 @@ export class GUIColorPanelElement extends GUIElement {
 
 
 export class GUIBitmapTextElement extends GUIElement {
-    constructor(screen, text, x = 0, y = 0, rotation = 0, size = 5, color = 0xFFFFFF, shadow = true, opacity = 1, center = false) {
+    constructor(screen, text, x = 0, y = 0, rotation = 0, size = 3, color = 0xFFFFFF, shadow = true, opacity = 1, center = false) {
         super(screen);
         this.bitmap_font = this.engine.bitmap_font;
         this.text = text;
@@ -1754,14 +1950,10 @@ export class GUIButtonElement extends GUIElement {
         this.onHover = new EventList();
         this.onUnHover = new EventList();
 
-        this.onClick.addEvent(() => {
-            this.engine.playSound("s_click");
-        })
-
         this.scale = 3;
 
         this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.state);
-        this.title = this.addBitmapText(this.text, 0 + (this.width * this.scale / 2), 0, 0, 1.25 * this.scale);
+        this.title = this.addBitmapText(this.text, 0 + (this.width * this.scale / 2), 0, 0, this.scale);
     }
 
     render(ctx) {
@@ -1801,6 +1993,7 @@ export class GUIButtonElement extends GUIElement {
                     this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
                     this.engine.input_manager.mouseGUIButtonElementClick.runAll(this);
                     this.onClick.runAll();
+                    this.engine.playClick();
                     if (this.mouseHover && this.screen == this.engine.screen && this.affectCursor) {
                         this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
                     }
@@ -1860,7 +2053,7 @@ export class GUIButtonElement extends GUIElement {
 
 
 export class GUISliderElement extends GUIElement {
-    constructor(screen, title = "Slider", texts = { 50: "Normal" }, start = 0, stop = 100, step = 1, value = 50, x = 0, y = 0, width = 200, height = 20, affectCursor = false) {
+    constructor(screen, title = "Slider", texts = { 50: "Normal" }, beforemark = "", mark = "", start = 0, stop = 100, step = 1, value = 50, x = 0, y = 0, width = 160, height = 20, affectCursor = false) {
         super(screen);
 
         this.input = this.engine.input;
@@ -1875,10 +2068,12 @@ export class GUISliderElement extends GUIElement {
         this.mouseHover = false;
         this.mousePress = false;
 
-        this.affectCursor = true;
+        this.affectCursor = affectCursor;
 
         this.texts = texts;
         this.titletext = title;
+        this.beforemark = beforemark;
+        this.mark = mark;
 
         this.start = start;
         this.stop = stop;
@@ -1900,7 +2095,7 @@ export class GUISliderElement extends GUIElement {
 
         this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.bg);
         this.knobsprite = this.addTextureSpritePanel("gui", -(this.width / 200 * 8 * this.scale / 2), -(this.height / 20 * 22 * this.scale / 2), 8, 21, this.knob);
-        this.title = this.addBitmapText(this.titletext + " : " + this.value, 0 + (this.width * this.scale / 2), 0, 0, 1.25 * this.scale);
+        this.title = this.addBitmapText(this.titletext + " : " + this.beforemark + this.value + this.mark, 0 + (this.width * this.scale / 2), 0, 0, this.scale);
     }
 
     render(ctx) {
@@ -1984,7 +2179,7 @@ export class GUISliderElement extends GUIElement {
                 this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
                 this.engine.input_manager.mouseGUIButtonElementClick.runAll(this);
                 this.onClick.runAll();
-                this.engine.playSound("s_click");
+                this.engine.playClick();
                 if (this.mouseHover && this.screen == this.engine.screen && this.affectCursor) {
                     this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
                 }
@@ -2007,13 +2202,174 @@ export class GUISliderElement extends GUIElement {
         const currentPercentage = (this.value - this.start) / (this.stop - this.start);
         this.knobsprite.x = minKnobX + (currentPercentage * totalTravelDistance);
 
-        const specialText = this.texts[this.value];
+        const specialText = this.texts[this.value.toString()];
 
         if (specialText) {
             this.title.text = specialText
         } else {
-            this.title.text = this.titletext + " : " + this.value;
+            this.title.text = this.titletext + ": " + this.beforemark + this.value + this.mark;
         }
+
+        this.title.x = 0 - this.title.getTextWidth() / 2;
+        this.title.y = 0 - this.title.getTextHeight() / 2;
+
+        super.render(ctx);
+    }
+}
+
+
+export class GUISwitchElement extends GUIElement {
+    constructor(screen, text = "Switch", options = { "ON": true, "OFF": false }, value = "OFF", x = 0, y = 0, width = 160, height = 20, affectCursor = false) {
+        super(screen);
+
+        this.input = this.engine.input;
+
+        this.normal = [0, 66, 200, 20];
+        this.hovered = [0, 86, 200, 20];
+        this.disabled = [0, 46, 200, 20];
+
+        this.state = this.normal;
+
+        this.interactState = "none";
+        this.pushState = false;
+        this.pushHoverState = false;
+
+        this.mouseHover = false;
+        this.mousePress = false;
+
+        this.affectCursor = affectCursor;
+
+        this.text = text;
+        this.options = options;
+        this.value = value;
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+
+        this.onClick = new EventList();
+        this.onRelease = new EventList();
+        this.onHover = new EventList();
+        this.onUnHover = new EventList();
+        this.onSwitch = new EventList();
+
+        this.scale = 3;
+
+        this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.state);
+
+        const initialText = `${this.text}: ${this.value}`;
+        this.title = this.addBitmapText(initialText, 0, 0, 0, this.scale);
+
+        this.title.x = 0 - this.title.getTextWidth() / 2;
+        this.title.y = 0 - this.title.getTextHeight() / 2;
+    }
+
+    _cycleValue() {
+        const keys = Object.keys(this.options);
+        let currentIndex = keys.indexOf(this.value);
+
+        if (currentIndex === -1) currentIndex = 0;
+        const nextIndex = (currentIndex + 1) % keys.length;
+
+        this.value = keys[nextIndex];
+        const associatedValue = this.options[this.value];
+
+        this.title.text = `${this.text}: ${this.value}`;
+
+        this.onSwitch.runAll(this.value, associatedValue);
+    }
+
+    render(ctx) {
+        const mpos = this.input.getInputState("Mouse_Position") || { x: 999999, y: 999999 };
+        const mbuttonDown = this.input.getInputState("Mouse_Button_0") || false;
+        const mtriggerActive = this.input.getInputState("Mouse_Trigger_0") || false;
+
+        this.sprite.x = -(this.width * this.scale / 2);
+        this.sprite.y = -(this.height * this.scale / 2);
+
+        this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
+        this.mousePress = mbuttonDown;
+
+        if (this.mouseHover) {
+            if (this.mousePress) {
+                if (this.interactState == "hover" && mtriggerActive) {
+                    this.interactState = "push";
+                    this.state = this.hovered;
+                    this.title.color = Enum.Color.SelectButtonColor;
+                }
+
+                if (this.interactState == "none") {
+                    this.interactState = "hover";
+                    this.state = this.hovered;
+                    this.title.color = Enum.Color.SelectButtonColor;
+
+                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
+                    this.onHover.runAll();
+                    if (this.affectCursor) {
+                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                    }
+                }
+
+                if (this.interactState == "push" && this.pushState == false) {
+                    this.pushState = true;
+
+                    this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
+                    this.engine.input_manager.mouseGUIButtonElementClick.runAll(this);
+
+                    this._cycleValue();
+
+                    this.onClick.runAll();
+                    this.engine.playClick();
+                    if (this.mouseHover && this.screen == this.engine.screen && this.affectCursor) {
+                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                    }
+                }
+            } else {
+                if (this.interactState == "none" || this.interactState == "push") {
+                    this.interactState = "hover";
+
+                    this.state = this.hovered;
+                    this.title.color = Enum.Color.SelectButtonColor;
+
+                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
+                    this.onHover.runAll();
+
+                    if (this.affectCursor) {
+                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                    }
+                }
+                if (this.interactState == "hover" && this.pushState == true) {
+                    this.pushState = false;
+
+                    this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
+                    this.onRelease.runAll();
+                }
+            }
+        } else {
+            if (this.interactState == "hover" || this.interactState == "push") {
+                this.interactState = "none";
+
+                this.state = this.normal;
+                this.title.color = Enum.Color.NormalButtonColor;
+
+                this.engine.input_manager.mouseGUIButtonElementUnHover.runAll(this);
+                this.onUnHover.runAll();
+
+                if (this.affectCursor) {
+                    this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
+                }
+            }
+            if (this.pushState == true) {
+                this.pushState = false;
+                this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
+                this.onRelease.runAll();
+            }
+        }
+
+        this.sprite.cords = this.state;
+        this.sprite.w = this.width * this.scale;
+        this.sprite.h = this.height * this.scale;
 
         this.title.x = 0 - this.title.getTextWidth() / 2;
         this.title.y = 0 - this.title.getTextHeight() / 2;
@@ -2029,65 +2385,120 @@ export class GUISliderElement extends GUIElement {
 
 
 
-export class Screen {
-    constructor(engine) {
-        this.engine = engine;
+export class Page {
+    constructor(screen) {
+        this.screen = screen;
+        this.engine = screen.engine;
 
         this.guiElements = [];
     }
 
     addElement(element) {
         this.guiElements.push(element);
-        this.guiElements.sort(
-            (a, b) => a.layer - b.layer
-        );
+        this.guiElements.sort((a, b) => (a.layer || 0) - (b.layer || 0));
         return element;
     }
 
-    addColorPanel(color, x, y, width, height, rotation, opacity) {
-        return this.addElement(new GUIColorPanelElement(this, color, x, y, width, height, rotation, opacity));
-    }
-
-    addTexturePanel(textureID, x, y, width, height, rotation, opacity) {
-        return this.addElement(new GUITexturePanelElement(this, textureID, x, y, width, height, rotation, opacity));
-    }
-
-    addImagePanel(image, x, y, width, height, rotation, opacity) {
-        return this.addElement(new GUIImagePanelElement(this, image, x, y, width, height, rotation, opacity));
-    }
-
-    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) {
-        return this.addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation));        
-    }
-
-    addTiledTexturePanel(textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) {
-        return this.addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation));        
-    }
-
-    addTextureSpritePanel(textureID, x, y, width, height, cords, rotation, opacity) {
-        return this.addElement(new GUITextureSpritePanelElement(this, textureID, x, y, width, height, cords, rotation, opacity));
-    }
-
-    addBitmapText(text, x, y, rotation, size, color, shadow, opacity, center) {
-        return this.addElement(new GUIBitmapTextElement(this, text, x, y, rotation, size, color, shadow, opacity, center));
-    }
-
-    addButton(text, x, y, width, height, affectCursor) {
-        return this.addElement(new GUIButtonElement(this, text, x, y, width, height, affectCursor));
-    }
-
-    addSlider(title, texts, start, stop, step, value, x, y, width, height, affectCursor) {
-        return this.addElement(new GUISliderElement(this, title, texts, start, stop, step, value, x, y, width, height, affectCursor));
-    }
-
-    init() {
-
-    }
+    addBlurPanel(intensity, x, y, width, height, rotation, opacity) { return this.addElement(new GUIBlurPanelElement(this, intensity, x, y, width, height, rotation, opacity)) };
+    addColorPanel(color, x, y, width, height, rotation, opacity) { return this.addElement(new GUIColorPanelElement(this, color, x, y, width, height, rotation, opacity)) };
+    addTexturePanel(textureID, x, y, width, height, rotation, opacity) { return this.addElement(new GUITexturePanelElement(this, textureID, x, y, width, height, rotation, opacity)) };
+    addImagePanel(image, x, y, width, height, rotation, opacity) { return this.addElement(new GUIImagePanelElement(this, image, x, y, width, height, rotation, opacity)) };
+    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
+    addTiledTexturePanel(textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
+    addTextureSpritePanel(textureID, x, y, width, height, cords, rotation, opacity) { return this.addElement(new GUITextureSpritePanelElement(this, textureID, x, y, width, height, cords, rotation, opacity)) };
+    addBitmapText(text, x, y, rotation, size, color, shadow, opacity, center) { return this.addElement(new GUIBitmapTextElement(this, text, x, y, rotation, size, color, shadow, opacity, center)) };
+    addButton(text, x, y, width, height, affectCursor) { return this.addElement(new GUIButtonElement(this, text, x, y, width, height, affectCursor)) };
+    addSwitch(text, options, value, x, y, width, height, affectCursor) { return this.addElement(new GUISwitchElement(this, text, options, value, x, y, width, height, affectCursor)) };
+    addSlider(title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor) { return this.addElement(new GUISliderElement(this, title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor)) };
 
     render(ctx) {
         this.guiElements.forEach((element) => {
-            element.render(ctx)
-        })
+            element.render(ctx);
+        });
+    }
+}
+
+
+
+
+
+
+
+
+export class Screen {
+    constructor(engine) {
+        this.engine = engine;
+
+        this.pages = [];
+        this.page = 0;
+    }
+
+    getPage(num = this.page) {
+        if (!this.pages[num]) {
+            this.pages[num] = new Page(this);
+        }
+        return this.pages[num];
+    }
+
+    nextPage() {
+        const nextIndex = this.page >= this.pages.length - 1 ? this.page + 1 : this.page + 1;
+        this.turnPage(nextIndex);
+    }
+
+    prevPage() {
+        if (this.page <= 0) {
+            if (this.pages.length > 0) {
+                this.turnPage(this.pages.length - 1);
+            }
+            return;
+        }
+        this.turnPage(this.page - 1);
+    }
+
+    turnPage(num) {
+        if (!this.pages[num]) {
+            this.pages[num] = new Page(this);
+        }
+        this.page = num;
+    }
+
+    setPage(pageInstance) {
+        const index = this.pages.indexOf(pageInstance);
+        if (index !== -1) {
+            this.page = index;
+        }
+    }
+
+    /*
+    addBlurPanel(...args) { return this.getPage().addBlurPanel(...args); }
+    addColorPanel(...args) { return this.getPage().addColorPanel(...args); }
+    addTexturePanel(...args) { return this.getPage().addTexturePanel(...args); }
+    addImagePanel(...args) { return this.getPage().addImagePanel(...args); }
+    addTiledImagePanel(...args) { return this.getPage().addTiledImagePanel(...args); }
+    addTiledTexturePanel(...args) { return this.getPage().addTiledTexturePanel(...args); }
+    addTextureSpritePanel(...args) { return this.getPage().addTextureSpritePanel(...args); }
+    addBitmapText(...args) { return this.getPage().addBitmapText(...args); }
+    addButton(...args) { return this.getPage().addButton(...args); }
+    addSwitch(...args) { return this.getPage().addSwitch(...args); }
+    addSlider(...args) { return this.getPage().addSlider(...args); }
+    */
+
+    addBlurPanel(intensity, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUIBlurPanelElement(this, intensity, x, y, width, height, rotation, opacity)) };
+    addColorPanel(color, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUIColorPanelElement(this, color, x, y, width, height, rotation, opacity)) };
+    addTexturePanel(textureID, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUITexturePanelElement(this, textureID, x, y, width, height, rotation, opacity)) };
+    addImagePanel(image, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUIImagePanelElement(this, image, x, y, width, height, rotation, opacity)) };
+    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.getPage().addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
+    addTiledTexturePanel(textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.getPage().addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
+    addTextureSpritePanel(textureID, x, y, width, height, cords, rotation, opacity) { return this.getPage().addElement(new GUITextureSpritePanelElement(this, textureID, x, y, width, height, cords, rotation, opacity)) };
+    addBitmapText(text, x, y, rotation, size, color, shadow, opacity, center) { return this.getPage().addElement(new GUIBitmapTextElement(this, text, x, y, rotation, size, color, shadow, opacity, center)) };
+    addButton(text, x, y, width, height, affectCursor) { return this.getPage().addElement(new GUIButtonElement(this, text, x, y, width, height, affectCursor)) };
+    addSwitch(text, options, value, x, y, width, height, affectCursor) { return this.getPage().addElement(new GUISwitchElement(this, text, options, value, x, y, width, height, affectCursor)) };
+    addSlider(title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor) { return this.getPage().addElement(new GUISliderElement(this, title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor)) };
+
+    init() { };
+
+    render(ctx) {
+        this.getPage().render(ctx);
     }
 }
 
@@ -2153,51 +2564,48 @@ export class MenuScreen extends Screen {
         const canvasH = 1440;
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
+        const down = 1440;
+        const up = 0;
+        const left = 2560;
+        const right = 0;
 
         this.splashTextStr = engine.splash;
         this.gradientImage = createOverlayGradient(canvasW, canvasH);
 
-        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.2);
+        this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
         this.addTexturePanel("logo", canvasW / 2 - 500, 100, 1000, 170);
 
         this.splashText = this.addBitmapText(this.splashTextStr, centerX + 350, 250, -20, 5, 0xFFFF00, true, 1, true);
 
-        this.addBitmapText("by Fraeric123", 2195, 1395, 0, 5);
-        this.addBitmapText("not Minecraft 1.0.0", 10, 1395, 0, 5);
+        this.addBitmapText("by Fraeric123", left - 225, down - 30, 0, 3);
+        this.addBitmapText("not Minecraft 1.0.0", 10, down - 30, 0, 3);
 
         const playBut = this.addButton("Play", centerX, centerY - 100);
         const optionsBut = this.addButton("Options", centerX, centerY - 30);
         const exitBut = this.addButton("Exit", centerX, centerY + 40);
 
-        optionsBut.onClick.addEvent(() => {
-            engine.setScreen(engine.optionsScreen);
-        })
+        optionsBut.onClick.addEvent(() => { engine.setScreen(engine.optionsScreen) });
 
-        exitBut.onClick.addEvent(() => {
-            window.close();
-        })
+        exitBut.onClick.addEvent(() => { window.close() });
     }
 
     init() {
         if (this.engine.renderState.state == Enum.RenderState.Clear) {
             this.engine.setRenderState(Enum.RenderState.MenuBackground);
 
-            const p0 = this.engine.asset_manager.get("pano0");
-            const p1 = this.engine.asset_manager.get("pano1");
-            const p2 = this.engine.asset_manager.get("pano2");
-            const p3 = this.engine.asset_manager.get("pano3");
-            const p4 = this.engine.asset_manager.get("pano4");
-            const p5 = this.engine.asset_manager.get("pano5");
+            const p0 = this.engine.asset_manager.get("pano0"); const p3 = this.engine.asset_manager.get("pano3");
+            const p1 = this.engine.asset_manager.get("pano1"); const p4 = this.engine.asset_manager.get("pano4");
+            const p2 = this.engine.asset_manager.get("pano2"); const p5 = this.engine.asset_manager.get("pano5");
 
-            this.engine.setPanorama(p0, p1, p2, p3, p4, p5);
-
-            this.engine.camera.position.set(0, 0, 0);
+            this.engine.setPanorama(p0, p1, p2, p3, p4, p5); this.engine.camera.position.set(0, 0, 0);
         }
     }
 
     render(ctx) {
-        const rotX = (Math.sin(this.engine.ms() / 10 / 400) * 25 + 20) * deg2rad;
-        const rotY = (-this.engine.ms() / 10 * 0.1) * deg2rad;
+        const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
+        const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
+        const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
 
         const timeMs = this.engine.ms() % 1000;
         const wave = Math.abs(Math.sin((timeMs / 1000) * Math.PI * 2));
@@ -2221,20 +2629,308 @@ export class OptionsScreen extends Screen {
         const canvasH = 1440;
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
+        const down = 1440;
+        const up = 0;
+        const lefty = 2560;
+        const righty = 0;
 
         this.gradientImage = createOverlayGradient(canvasW, canvasH);
 
-        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.2);
-        this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 10, 0);
-        this.addBitmapText("Options", centerX, 150, 0, 5, 0xFFFFFF, true, 1, true);
-        const backBut = this.addButton("Back", centerX - 960, 400);
-        const masterVolumeSlider = this.addSlider("MasterVolume", {}, 0, 100, 1, this.engine.config.data.MasterVolume, centerX, 400, 400, 20);
+        this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
+        this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Options", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
 
-        masterVolumeSlider.onSlide.addEvent((vol) => {
-            engine.config.data.MasterVolume = vol;
+        const musicVolumeSlider = this.addSlider(
+            "Music",
+            {
+                0: "Music: OFF"
+            },
+            "", "%",
+            0, 100, 1,
+            this.engine.config.data.Music,
+            centerX - 260, centerY - 400
+        );
+        const masterVolumeSlider = this.addSlider(
+            "Sound",
+            {
+                0: "Sound: OFF"
+            },
+            "", "%",
+            0, 100, 1,
+            this.engine.config.data.MasterVolume,
+            centerX + 260, centerY - 400
+        );
+
+        const invertMouseSwitch = this.addSwitch(
+            "Invert Mouse",
+            {
+                "ON": true, "OFF": false
+            },
+            engine.config.data.InvertMouse ? "ON" : "OFF",
+            centerX - 260, centerY - 320
+        );
+        const sensitivitySlider = this.addSlider(
+            "Sensitivity",
+            {
+                0: "Sensitivity: *yawn*",
+                200: "Sensitivity: HYPERSPEED!!!"
+            },
+            "", "%",
+            0, 200, 1,
+            this.engine.config.data.Sensitivity,
+            centerX + 260, centerY - 320
+        );
+
+        const fovSlider = this.addSlider(
+            "FOV",
+            {
+                70: "FOV: Normal",
+                110: "FOV: Quake Pro"
+            },
+            "", "",
+            70, 110, 1,
+            this.engine.config.data.FOV,
+            centerX - 260, centerY - 240
+        );
+        const difficultySwitch = this.addSwitch(
+            "Difficulty",
+            {
+                "Peaceful": 0,
+                "Easy": 1,
+                "Normal": 2,
+                "Hard": 3
+            },
+            engine.config.getDifficulty(),
+            centerX + 260, centerY - 240
+        );
+
+        const extrasBut = this.addButton("§6Extras", centerX, centerY + 120);
+        const videoSettingsBut = this.addButton("Video Settings...", centerX, centerY + 200);
+        const constrolsBut = this.addButton("Controls...", centerX, centerY + 280);
+
+        const doneBut = this.addButton("Done", centerX, centerY + 400);
+
+        masterVolumeSlider.onSlide.addEvent((vol) => { engine.config.data.MasterVolume = vol });
+        musicVolumeSlider.onSlide.addEvent((vol) => { engine.config.data.Music = vol });
+
+        invertMouseSwitch.onSwitch.addEvent((vol) => { engine.config.data.InvertMouse = vol });
+        sensitivitySlider.onSlide.addEvent((vol) => { engine.config.data.Sensitivity = vol });
+
+        fovSlider.onSlide.addEvent((vol) => { engine.config.data.FOV = vol });
+        difficultySwitch.onSwitch.addEvent((vol) => { engine.config.data.Difficulty = vol });
+
+        extrasBut.onClick.addEvent(() => { this.turnPage(3) });
+        videoSettingsBut.onClick.addEvent(() => { this.turnPage(1) });
+        constrolsBut.onClick.addEvent(() => { this.turnPage(2) });
+
+        doneBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen) });
+
+        this.turnPage(1);
+
+        this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
+        this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Video Settings", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+
+        const graphicsSwitch = this.addSwitch(
+            "Graphics",
+            {
+                "Fancy": Enum.Graphics.Fancy,
+                "Fast": Enum.Graphics.Fast
+            },
+            engine.config.getGraphics(),
+            centerX - 260, centerY - 400
+        );
+        const renderDistanceSwitch = this.addSwitch(
+            "Render Distance",
+            {
+                "Far": Enum.RenderDistance.Far,
+                "Normal": Enum.RenderDistance.Normal,
+                "Short": Enum.RenderDistance.Short,
+                "Tiny": Enum.RenderDistance.Tiny
+            },
+            engine.config.getRenderDistance(),
+            centerX + 260, centerY - 400
+        );
+
+        const smoothLightingSwitch = this.addSwitch(
+            "Smooth Lighting",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data.SmoothLighting ? "ON" : "OFF",
+            centerX - 260, centerY - 320
+        );
+        const performanceSwitch = this.addSwitch(
+            "Performance",
+            {
+                "Balanced": Enum.Performance.Balanced,
+                "MaxFPS": Enum.Performance.MaxFPS,
+                "PowerSaver": Enum.Performance.PowerSaver
+            },
+            engine.config.getPerformance(),
+            centerX + 260, centerY - 320
+        );
+
+        const threeDAnaglyphSwitch = this.addSwitch(
+            "3D Anaglyph",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data["3DAnaglyph"] ? "ON" : "OFF",
+            centerX - 260, centerY - 240
+        );
+        const viewBobbingSwitch = this.addSwitch(
+            "View Bobbing",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data.ViewBobbing ? "ON" : "OFF",
+            centerX + 260, centerY - 240
+        );
+
+        const guiScaleSwitch = this.addSwitch(
+            "GUI Scale",
+            {
+                "Auto": Enum.GUIScale.Auto,
+                "Large": Enum.GUIScale.Large,
+                "Normal": Enum.GUIScale.Normal,
+                "Small": Enum.GUIScale.Small
+            },
+            engine.config.getGUIScale(),
+            centerX - 260, centerY - 160
+        );
+        const advancedWebGL = this.addSwitch(
+            "Advanced WebGL",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.AdvancedWebGL,
+            centerX + 260, centerY - 160
+        );
+
+        const brightnessSlider = this.addSlider(
+            "Brightness",
+            {
+                0: "Brightness: Moody",
+                100: "Brightness: Bright"
+            },
+            "+", "%",
+            0, 100, 1,
+            this.engine.config.data.FOV,
+            centerX - 260, centerY - 80
+        );
+        const cloudsSwitch = this.addSwitch(
+            "Clouds",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.Clouds,
+            centerX + 260, centerY - 80
+        );
+
+        const particlesSwitch = this.addSwitch(
+            "Particles",
+            {
+                "Minimal": Enum.Particles.Minimal,
+                "Decreased": Enum.Particles.Decreased,
+                "All": Enum.Particles.All
+            },
+            engine.config.getParticles(),
+            centerX - 260, centerY
+        );
+
+        const doneBut2 = this.addButton("Done", centerX, centerY + 400);
+
+        graphicsSwitch.onSwitch.addEvent((vol) => { engine.config.data.Graphics = vol });
+        renderDistanceSwitch.onSwitch.addEvent((vol) => { engine.config.data.RenderDistance = vol });
+
+        smoothLightingSwitch.onSwitch.addEvent((vol) => { engine.config.data.SmoothLighting = vol });
+        performanceSwitch.onSwitch.addEvent((vol) => { engine.config.data.Performance = vol });
+
+        threeDAnaglyphSwitch.onSwitch.addEvent((vol) => { engine.config.data["3DAnaglyph"] = vol });
+        viewBobbingSwitch.onSwitch.addEvent((vol) => { engine.config.data.ViewBobbing = vol });
+
+        guiScaleSwitch.onSwitch.addEvent((vol) => { engine.config.data.GUIScale = vol });
+
+        doneBut2.onClick.addEvent(() => { this.turnPage(0) });
+
+        this.turnPage(2);
+
+        this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
+        this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Controls", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+
+        const attack = null
+        const useItem = null
+
+        const forward = null
+        const left = null
+
+        const back = null
+        const right = null
+
+        const jump = null
+        const sneak = null
+
+        const drop = null
+        const inventory = null
+
+        const chat = null
+        const listPlayers = null
+
+        const pickBlock = null
+
+        const doneBut3 = this.addButton("Done", centerX, centerY + 400);
+
+        doneBut3.onClick.addEvent(() => {
+            this.turnPage(0);
         })
-        backBut.onClick.addEvent(() => {
-            engine.setScreen(engine.menuScreen);
+
+        this.turnPage(3);
+
+        this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
+        this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 0.7);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Extras", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+
+        const menuSpinSpeedSlider = this.addSlider(
+            "Menu Spin Speed",
+            {
+                "-10000": "Menu Spin Speed: LIGHTSPEED Backwards",
+                "-5000": "Menu Spin Speed: FAST AND FURIOUS Backwards",
+                "-2500": "Menu Spin Speed: Dizzy Backwards",
+                "-50": "Menu Spin Speed: Normal Backwards",
+                "0": "Menu Spin Speed: Motionless",
+                "50": "Menu Spin Speed: Normal",
+                "2500": "Menu Spin Speed: Dizzy",
+                "5000": "Menu Spin Speed: FAST AND FURIOUS",
+                "10000": "Menu Spin Speed: LIGHTSPEED"
+            },
+            "", "",
+            -10000, 10000, 50,
+            engine.config.data.MenuSpinSpeed,
+            centerX, centerY - 400,
+            250
+        );
+
+        const doneBut4 = this.addButton("Done", centerX, centerY + 400);
+
+        menuSpinSpeedSlider.onSlide.addEvent((vol) => { engine.config.data.MenuSpinSpeed = vol });
+
+        doneBut4.onClick.addEvent(() => {
+            this.turnPage(0);
         })
     }
 
@@ -2242,22 +2938,18 @@ export class OptionsScreen extends Screen {
         if (this.engine.renderState.state == Enum.RenderState.Clear) {
             this.engine.setRenderState(Enum.RenderState.MenuBackground);
 
-            const p0 = this.engine.asset_manager.get("pano0");
-            const p1 = this.engine.asset_manager.get("pano1");
-            const p2 = this.engine.asset_manager.get("pano2");
-            const p3 = this.engine.asset_manager.get("pano3");
-            const p4 = this.engine.asset_manager.get("pano4");
-            const p5 = this.engine.asset_manager.get("pano5");
+            const p0 = this.engine.asset_manager.get("pano0"); const p3 = this.engine.asset_manager.get("pano3");
+            const p1 = this.engine.asset_manager.get("pano1"); const p4 = this.engine.asset_manager.get("pano4");
+            const p2 = this.engine.asset_manager.get("pano2"); const p5 = this.engine.asset_manager.get("pano5");
 
-            this.engine.setPanorama(p0, p1, p2, p3, p4, p5);
-
-            this.engine.camera.position.set(0, 0, 0);
+            this.engine.setPanorama(p0, p1, p2, p3, p4, p5); this.engine.camera.position.set(0, 0, 0);
         }
     }
 
     render(ctx) {
-        const rotX = (Math.sin(this.engine.ms() / 10 / 400) * 25 + 20) * deg2rad;
-        const rotY = (-this.engine.ms() / 10 * 0.1) * deg2rad;
+        const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
+        const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
+        const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
 
         this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
 
@@ -2543,7 +3235,95 @@ export class ConfigList {
     constructor() {
         this.data = {
             "MasterVolume": 100,
-            "Music": 100
+            "Music": 100,
+            "Sensitivity": 100,
+            "FOV": 70,
+            "Brightness": 0,
+            "MenuSpinSpeed": 50,
+
+            "InvertMouse": false,
+            "SmoothLighting": true,
+            "3DAnaglyph": false,
+            "ViewBobbing": true,
+            "AdvancedWebGL": true,
+            "Clouds": true,
+
+            "Difficulty": Enum.Difficulty.Normal,
+            "Graphics": Enum.Graphics.Fancy,
+            "RenderDistance": Enum.RenderDistance.Normal,
+            "Performance": Enum.Performance.Balanced,
+            "GUIScale": Enum.GUIScale.Normal,
+            "Particles": Enum.Particles.All,
+
+            "Attack": Enum.Controls["Button 1"],
+            "Use Item": Enum.Controls["Button 2"],
+            "Forward": Enum.Controls.W,
+            "Left": Enum.Controls.A,
+            "Back": Enum.Controls.S,
+            "Right": Enum.Controls.D,
+            "Jump": Enum.Controls.SPACE,
+            "Sneak": Enum.Controls.LCONTROL,
+            "Drop": Enum.Controls.Q,
+            "Inventory": Enum.Controls.E,
+            "Chat": Enum.Controls.T,
+            "List Players": Enum.Controls.TAB,
+            "Pick Block": Enum.Controls["Button 3"]
+        }
+    }
+
+    getDifficulty() {
+        switch (this.data.Difficulty) {
+            case Enum.Difficulty.Easy: return "Easy"; break;
+            case Enum.Difficulty.Hard: return "Hard"; break;
+            case Enum.Difficulty.Normal: return "Normal"; break;
+            case Enum.Difficulty.Peaceful: return "Peaceful"; break;
+            default: return "None"; break;
+        }
+    }
+
+    getGraphics() {
+        switch (this.data.Graphics) {
+            case Enum.Graphics.Fancy: return "Fancy"; break;
+            case Enum.Graphics.Fast: return "Fast"; break;
+            default: return "None"; break;
+        }
+    }
+
+    getRenderDistance() {
+        switch (this.data.RenderDistance) {
+            case Enum.RenderDistance.Far: return "Far"; break;
+            case Enum.RenderDistance.Normal: return "Normal"; break;
+            case Enum.RenderDistance.Short: return "Short"; break;
+            case Enum.RenderDistance.Tiny: return "Tiny"; break;
+            default: return "None"; break;
+        }
+    }
+
+    getPerformance() {
+        switch (this.data.Performance) {
+            case Enum.Performance.Balanced: return "Balanced"; break;
+            case Enum.Performance.MaxFPS: return "MaxFPS"; break;
+            case Enum.Performance.PowerSaver: return "PowerSaver"; break;
+            default: return "None"; break;
+        }
+    }
+
+    getGUIScale() {
+        switch (this.data.GUIScale) {
+            case Enum.GUIScale.Auto: return "Auto"; break;
+            case Enum.GUIScale.Large: return "Large"; break;
+            case Enum.GUIScale.Normal: return "Normal"; break;
+            case Enum.GUIScale.Small: return "Small"; break;
+            default: return "None"; break;
+        }
+    }
+
+    getParticles() {
+        switch (this.data.Particles) {
+            case Enum.Particles.All: return "All"; break;
+            case Enum.Particles.Decreased: return "Decreased"; break;
+            case Enum.Particles.Minimal: return "Minimal"; break;
+            default: return "None"; break;
         }
     }
 }
@@ -2593,14 +3373,12 @@ export class VoxWheel {
 
         this.splash = getRandomSplash();
 
-        this.MenuBackgroundScroll = 0;
-
         this.screen = null;
 
         this.bitmap_font = new BitmapFont(this, "font");
 
-        this.date = new Date();        
-        
+        this.date = new Date();
+
         this.assetLoadingScreen = new AssetLoadingScreen(this);
         this.logoScreen = new LogoScreen(this);
         this.menuScreen = new MenuScreen(this);
@@ -2618,7 +3396,7 @@ export class VoxWheel {
     }
 
     playSound(soundID, volume = 1, speed = 1, time = 0) {
-        const asset = this.asset_manager.getAsset(soundID);
+        const asset = this.asset_manager.getAsset(soundID, 2);
         if (!asset || !asset.isLoaded) return;
 
         const finalVolume = this._getLogarithmicVolume(volume);
@@ -2632,6 +3410,19 @@ export class VoxWheel {
             sound.setPlaybackRate(speed);
             sound.play(time);
         }
+    }
+
+    playRandom() {
+        const randomSound = [ "bow", "break", "classic_hurt", "drink", "explode", "fizz", "fuse", "pop", "splash", "wood_click" ];
+        const randomIndex = Math.floor(Math.random() * randomSound.length);
+        const soundID = randomSound[randomIndex];
+
+        this.playSound(soundID);
+    }
+
+    playClick() {
+        //this.playRandom()
+        this.playSound("click");
     }
 
     playPositionalSound(soundID, positionOrObject, volume = 1, refDistance = 1, maxDistance = 100, speed = 1, time = 0) {
@@ -2688,6 +3479,7 @@ export class VoxWheel {
     }
 
     setScreen(screen) {
+        screen.turnPage(0);
         this.screen = screen;
         this.screen.init();
     }
@@ -2758,11 +3550,23 @@ assets.newAsset("gui", "../assets/textures/gui/gui.png", Enum.AssetType.Texture)
 assets.newAsset("icons", "../assets/textures/gui/icons.png", Enum.AssetType.Texture);
 assets.newAsset("dirt", "../assets/textures/dirt.png", Enum.AssetType.Texture);
 
-assets.newAsset("s_electronic", "../assets/audio/electronic.wav", Enum.AssetType.Audio);
-assets.newAsset("s_funk", "../assets/audio/funk.wav", Enum.AssetType.Audio);
-assets.newAsset("s_jazz", "../assets/audio/jazz.wav", Enum.AssetType.Audio);
-assets.newAsset("s_rock", "../assets/audio/rock.wav", Enum.AssetType.Audio);
-assets.newAsset("s_click", "../assets/audio/random/click.ogg", Enum.AssetType.Audio);
+assets.newAsset("electronic", "../assets/audio/electronic.wav", Enum.AssetType.Audio);
+assets.newAsset("funk", "../assets/audio/funk.wav", Enum.AssetType.Audio);
+assets.newAsset("jazz", "../assets/audio/jazz.wav", Enum.AssetType.Audio);
+assets.newAsset("rock", "../assets/audio/rock.wav", Enum.AssetType.Audio);
+assets.newAsset("click", "../assets/audio/random/click.ogg", Enum.AssetType.Audio);
+assets.newAsset("bow", "../assets/audio/random/bow.ogg", Enum.AssetType.Audio);
+assets.newAsset("break", "../assets/audio/random/break.ogg", Enum.AssetType.Audio);
+assets.newAsset("classic_hurt", "../assets/audio/random/classic_hurt.ogg", Enum.AssetType.Audio);
+assets.newAsset("drink", "../assets/audio/random/drink.ogg", Enum.AssetType.Audio);
+assets.newAsset("explode", "../assets/audio/random/explode1.ogg", Enum.AssetType.Audio);
+assets.newAsset("fizz", "../assets/audio/random/fizz.ogg", Enum.AssetType.Audio);
+assets.newAsset("fuse", "../assets/audio/random/fuse.ogg", Enum.AssetType.Audio);
+assets.newAsset("levelup", "../assets/audio/random/levelup.ogg", Enum.AssetType.Audio);
+assets.newAsset("orb", "../assets/audio/random/orb.ogg", Enum.AssetType.Audio);
+assets.newAsset("pop", "../assets/audio/random/pop.ogg", Enum.AssetType.Audio);
+assets.newAsset("splash", "../assets/audio/random/splash.ogg", Enum.AssetType.Audio);
+assets.newAsset("wood_click", "../assets/audio/random/wood_click.ogg", Enum.AssetType.Audio);
 
 const g = new VoxWheel({ assets: assets })
 
