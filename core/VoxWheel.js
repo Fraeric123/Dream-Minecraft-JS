@@ -427,9 +427,9 @@ export class AssetList {
     newAsset(id, path, type) {
         let newid = id;
         switch (type) {
-            case Enum.AssetType.Audio:   newid = "s_" + id; break;            
-            case Enum.AssetType.HDR:     newid = "h_" + id; break;
-            case Enum.AssetType.Model:   newid = "m_" + id; break;            
+            case Enum.AssetType.Audio: newid = "s_" + id; break;
+            case Enum.AssetType.HDR: newid = "h_" + id; break;
+            case Enum.AssetType.Model: newid = "m_" + id; break;
             case Enum.AssetType.Texture: newid = "t_" + id; break;
         }
         const asset = new Asset(newid, path, type);
@@ -440,12 +440,12 @@ export class AssetList {
     get(id, type = 1) {
         let prefix = "";
         switch (type) {
-            case Enum.AssetType.Audio:   prefix = "s_"; break;
-            case Enum.AssetType.HDR:     prefix = "h_"; break;
-            case Enum.AssetType.Model:   prefix = "m_"; break;
+            case Enum.AssetType.Audio: prefix = "s_"; break;
+            case Enum.AssetType.HDR: prefix = "h_"; break;
+            case Enum.AssetType.Model: prefix = "m_"; break;
             case Enum.AssetType.Texture: prefix = "t_"; break;
         }
-        
+
         return this.assets.get(prefix + id) || null;
     }
 
@@ -1967,7 +1967,7 @@ export class GUIButtonElement extends GUIElement {
         this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
         this.mousePress = mbuttonDown;
 
-        if (this.mouseHover) {
+        if (this.mouseHover && this.state != this.disabled) {
             if (this.mousePress) {
                 if (this.interactState == "hover" && mtriggerActive) {
                     this.interactState = "push";
@@ -2585,6 +2585,8 @@ export class MenuScreen extends Screen {
         const optionsBut = this.addButton("Options", centerX, centerY - 30);
         const exitBut = this.addButton("Exit", centerX, centerY + 40);
 
+        playBut.onClick.addEvent(() => { engine.setScreen(engine.worldSelectScreen) });
+
         optionsBut.onClick.addEvent(() => { engine.setScreen(engine.optionsScreen) });
 
         exitBut.onClick.addEvent(() => { window.close() });
@@ -2812,7 +2814,7 @@ export class OptionsScreen extends Screen {
                 "ON": true,
                 "OFF": false
             },
-            engine.config.AdvancedWebGL,
+            engine.config.data.AdvancedWebGL ? "ON" : "OFF",
             centerX + 260, centerY - 160
         );
 
@@ -2824,7 +2826,7 @@ export class OptionsScreen extends Screen {
             },
             "+", "%",
             0, 100, 1,
-            this.engine.config.data.FOV,
+            this.engine.config.data.Brightness,
             centerX - 260, centerY - 80
         );
         const cloudsSwitch = this.addSwitch(
@@ -2833,7 +2835,7 @@ export class OptionsScreen extends Screen {
                 "ON": true,
                 "OFF": false
             },
-            engine.config.Clouds,
+            engine.config.data.Clouds ? "ON" : "OFF",
             centerX + 260, centerY - 80
         );
 
@@ -2971,7 +2973,48 @@ export class WorldSelectScreen extends Screen {
         const left = 2560;
         const right = 0;
 
-        
+        this.gradientImage = createOverlayGradient(canvasW, canvasH);
+
+        this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
+        this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Select World", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+        this.addColorPanel("black", 0, 110, canvasW, canvasH - 300, 0, 0.55);
+
+        const cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160);
+        const createNewBut = this.addButton("Create New World", centerX + 255, down - 130, 160);
+        const playSelectedBut = this.addButton("Play Selected World", centerX - 255, down - 130, 160);
+        const renameBut = this.addButton("Rename", centerX - 255 -122.5, down - 55, 75);
+        const deleteBut = this.addButton("Delete", centerX - 255 +122.5, down - 55, 75);
+
+        playSelectedBut.state = playSelectedBut.disabled;
+        renameBut.state = renameBut.disabled
+        deleteBut.state = deleteBut.disabled
+
+        cancelBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen) });
+    }
+
+    init() {
+        if (this.engine.renderState.state == Enum.RenderState.Clear) {
+            this.engine.setRenderState(Enum.RenderState.MenuBackground);
+
+            const p0 = this.engine.asset_manager.get("pano0"); const p3 = this.engine.asset_manager.get("pano3");
+            const p1 = this.engine.asset_manager.get("pano1"); const p4 = this.engine.asset_manager.get("pano4");
+            const p2 = this.engine.asset_manager.get("pano2"); const p5 = this.engine.asset_manager.get("pano5");
+
+            this.engine.setPanorama(p0, p1, p2, p3, p4, p5); this.engine.camera.position.set(0, 0, 0);
+        }
+    }
+
+    render(ctx) {
+        const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
+        const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
+        const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
+
+        this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
+
+        super.render(ctx);
     }
 }
 
@@ -3401,6 +3444,7 @@ export class VoxWheel {
         this.logoScreen = new LogoScreen(this);
         this.menuScreen = new MenuScreen(this);
         this.optionsScreen = new OptionsScreen(this);
+        this.worldSelectScreen = new WorldSelectScreen(this);
     }
 
     ms() {
@@ -3431,7 +3475,7 @@ export class VoxWheel {
     }
 
     playRandom() {
-        const randomSound = [ "bow", "break", "classic_hurt", "drink", "explode", "fizz", "fuse", "pop", "splash", "wood_click" ];
+        const randomSound = ["bow", "break", "classic_hurt", "drink", "explode", "fizz", "fuse", "pop", "splash", "wood_click"];
         const randomIndex = Math.floor(Math.random() * randomSound.length);
         const soundID = randomSound[randomIndex];
 
