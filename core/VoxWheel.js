@@ -1476,8 +1476,6 @@ export class GUIElement {
         this.width = 1;
         this.height = 1;
 
-        this.rotation = 0
-
         this.offsetX = 0;
         this.offsetY = 0;
 
@@ -1821,7 +1819,6 @@ export class GUIBlurPanelElement extends GUIElement {
 
         this.blurPanel.w = this.width * this.scale;
         this.blurPanel.h = this.height * this.scale;
-        this.blurPanel.color = this.color;
         this.blurPanel.rotation = this.rotation;
         this.blurPanel.opacity = this.opacity;
 
@@ -1950,6 +1947,9 @@ export class GUIButtonElement extends GUIElement {
         this.onHover = new EventList();
         this.onUnHover = new EventList();
 
+        this.clickSound = "click";
+        this.hoverSound = "hover";
+
         this.scale = 3;
 
         this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.state);
@@ -1982,6 +1982,14 @@ export class GUIButtonElement extends GUIElement {
 
                     this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
                     this.onHover.runAll();
+
+                    switch (this.hoverSound) {
+                        case "hover": this.engine.playHover(); break;                    
+                        case "random": this.engine.playRandom(); break;
+                        case null: break;
+                        default: this.engine.playSound(this.clickSound); break;
+                    }
+
                     if (this.affectCursor) {
                         this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
                     }
@@ -1993,7 +2001,14 @@ export class GUIButtonElement extends GUIElement {
                     this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
                     this.engine.input_manager.mouseGUIButtonElementClick.runAll(this);
                     this.onClick.runAll();
-                    this.engine.playClick();
+
+                    switch (this.clickSound) {
+                        case "click": this.engine.playClick(); break;                    
+                        case "random": this.engine.playRandom(); break;
+                        case null: break;
+                        default: this.engine.playSound(this.clickSound); break;
+                    }
+                    
                     if (this.mouseHover && this.screen == this.engine.screen && this.affectCursor) {
                         this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
                     }
@@ -2403,7 +2418,7 @@ export class Page {
     addColorPanel(color, x, y, width, height, rotation, opacity) { return this.addElement(new GUIColorPanelElement(this, color, x, y, width, height, rotation, opacity)) };
     addTexturePanel(textureID, x, y, width, height, rotation, opacity) { return this.addElement(new GUITexturePanelElement(this, textureID, x, y, width, height, rotation, opacity)) };
     addImagePanel(image, x, y, width, height, rotation, opacity) { return this.addElement(new GUIImagePanelElement(this, image, x, y, width, height, rotation, opacity)) };
-    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
+    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledImagePanelElement(this, image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
     addTiledTexturePanel(textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
     addTextureSpritePanel(textureID, x, y, width, height, cords, rotation, opacity) { return this.addElement(new GUITextureSpritePanelElement(this, textureID, x, y, width, height, cords, rotation, opacity)) };
     addBitmapText(text, x, y, rotation, size, color, shadow, opacity, center) { return this.addElement(new GUIBitmapTextElement(this, text, x, y, rotation, size, color, shadow, opacity, center)) };
@@ -2441,7 +2456,7 @@ export class Screen {
     }
 
     nextPage() {
-        const nextIndex = this.page >= this.pages.length - 1 ? this.page + 1 : this.page + 1;
+        const nextIndex = this.page >= this.pages.length - 1 ? 0 : this.page + 1;
         this.turnPage(nextIndex);
     }
 
@@ -2487,7 +2502,7 @@ export class Screen {
     addColorPanel(color, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUIColorPanelElement(this, color, x, y, width, height, rotation, opacity)) };
     addTexturePanel(textureID, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUITexturePanelElement(this, textureID, x, y, width, height, rotation, opacity)) };
     addImagePanel(image, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUIImagePanelElement(this, image, x, y, width, height, rotation, opacity)) };
-    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.getPage().addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
+    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.getPage().addElement(new GUITiledImagePanelElement(this, image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
     addTiledTexturePanel(textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.getPage().addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
     addTextureSpritePanel(textureID, x, y, width, height, cords, rotation, opacity) { return this.getPage().addElement(new GUITextureSpritePanelElement(this, textureID, x, y, width, height, cords, rotation, opacity)) };
     addBitmapText(text, x, y, rotation, size, color, shadow, opacity, center) { return this.getPage().addElement(new GUIBitmapTextElement(this, text, x, y, rotation, size, color, shadow, opacity, center)) };
@@ -2514,13 +2529,13 @@ export class AssetLoadingScreen extends Screen {
         });
 
         this.addColorPanel("black", 0, 0, 2560, 1440);
-        this.addBitmapText("Minecraft asset loading", 15, 15, 0, 16);
-        this.Pic = this.addTexturePanel("terrain", 100, 400, 900, 500);
-        this.Text = this.addBitmapText("", 10, 320, 0, 5, 0x777777);
+        //this.addBitmapText("Minecraft asset loading", 15, 15, 0, 16);
+        //this.Pic = this.addTexturePanel("terrain", 100, 400, 900, 500);
+        //this.Text = this.addBitmapText("", 10, 320, 0, 5, 0x777777);
     }
 
     assetLoaded(progress) {
-        this.Text.text = `Loaded: ${progress.asset.path} (${Math.round(progress.value * 100)}%)`;
+        //this.Text.text = `Loaded: ${progress.asset.path} (${Math.round(progress.value * 100)}%)`;
 
         if (progress.asset.type == Enum.AssetType.Texture) {
             //this.Pic.textureID = progress.asset.id;
@@ -2536,7 +2551,7 @@ export class LogoScreen extends Screen {
         super(engine);
 
         this.addColorPanel("black", 0, 0, 2560, 1440);
-        this.addBitmapText("Logo", 15, 15, 0, 16);
+        //this.addBitmapText("Logo", 15, 15, 0, 16);
         //this.Pic = this.addTexturePanel("font", -500, 500, 5000, 500);
         //this.Text = this.addBitmapText("num", 10, 320, 0, 10, 0x777777);
 
@@ -2977,21 +2992,27 @@ export class WorldSelectScreen extends Screen {
 
         this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
         this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
-        this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
+        this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 0);        
         this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.55);
+        this.addTiledTexturePanel("dirt", 0, 0, canvasW, 120, 6.8, 0, 1);
+        this.addColorPanel("black", 0, 0, canvasW, 120, 0, 0.75);
+        this.addTiledTexturePanel("dirt", 0, down-190, canvasW, 190, 6.8, 0, 1);
+        this.addColorPanel("black", 0, down-190, canvasW, 190, 0, 0.75);
         this.addBitmapText("Select World", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
-        this.addColorPanel("black", 0, 110, canvasW, canvasH - 300, 0, 0.55);
+        
 
         const cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160);
         const createNewBut = this.addButton("Create New World", centerX + 255, down - 130, 160);
         const playSelectedBut = this.addButton("Play Selected World", centerX - 255, down - 130, 160);
-        const renameBut = this.addButton("Rename", centerX - 255 -122.5, down - 55, 75);
-        const deleteBut = this.addButton("Delete", centerX - 255 +122.5, down - 55, 75);
+        const renameBut = this.addButton("Rename", centerX - 255 -127, down - 55, 75);
+        const deleteBut = this.addButton("Delete", centerX - 255 +127, down - 55, 75);
 
         playSelectedBut.state = playSelectedBut.disabled;
         renameBut.state = renameBut.disabled
         deleteBut.state = deleteBut.disabled
 
+        createNewBut.onClick.addEvent(() => { engine.setScreen(engine.createWorldScreen) });
         cancelBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen) });
     }
 
@@ -3008,6 +3029,66 @@ export class WorldSelectScreen extends Screen {
     }
 
     render(ctx) {
+         
+        const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
+        const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
+        const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
+
+        this.bg.patternOffsetY = 500 * (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
+        this.bg.patternOffsetX = 500 * (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad; 
+
+        this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
+
+        super.render(ctx);
+    }
+}
+
+
+export class CreateWorldScreen extends Screen {
+    constructor(engine) {
+        super(engine);
+
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+        const down = 1440;
+        const up = 0;
+        const left = 2560;
+        const right = 0;
+
+        this.gradientImage = createOverlayGradient(canvasW, canvasH);
+
+        this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
+        this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Create World", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+
+        const cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160);
+        const createBut = this.addButton("Create New World", centerX - 255, down - 55, 160);
+
+        cancelBut.onClick.addEvent(() => { engine.setScreen(engine.worldSelectScreen) });
+        this.p = 0;
+        createBut.onClick.addEvent(() => { this.p = 1 });
+        createBut.onRelease.addEvent(() => { this.p = 0 });
+    }
+
+    init() {
+        if (this.engine.renderState.state == Enum.RenderState.Clear) {
+            this.engine.setRenderState(Enum.RenderState.MenuBackground);
+
+            const p0 = this.engine.asset_manager.get("pano0"); const p3 = this.engine.asset_manager.get("pano3");
+            const p1 = this.engine.asset_manager.get("pano1"); const p4 = this.engine.asset_manager.get("pano4");
+            const p2 = this.engine.asset_manager.get("pano2"); const p5 = this.engine.asset_manager.get("pano5");
+
+            this.engine.setPanorama(p0, p1, p2, p3, p4, p5); this.engine.camera.position.set(0, 0, 0);
+        }
+    }
+
+    render(ctx) {
+        this.bg.patternOffsetX += this.p;
+        this.bg.patternOffsetY += this.p;
         const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
         const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
         const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
@@ -3445,6 +3526,7 @@ export class VoxWheel {
         this.menuScreen = new MenuScreen(this);
         this.optionsScreen = new OptionsScreen(this);
         this.worldSelectScreen = new WorldSelectScreen(this);
+        this.createWorldScreen = new CreateWorldScreen(this);
     }
 
     ms() {
@@ -3485,6 +3567,10 @@ export class VoxWheel {
     playClick() {
         //this.playRandom()
         this.playSound("click");
+    }
+
+    playHover() {
+        this.playSound("hover");
     }
 
     playPositionalSound(soundID, positionOrObject, volume = 1, refDistance = 1, maxDistance = 100, speed = 1, time = 0) {
@@ -3617,6 +3703,7 @@ assets.newAsset("funk", "../assets/audio/funk.wav", Enum.AssetType.Audio);
 assets.newAsset("jazz", "../assets/audio/jazz.wav", Enum.AssetType.Audio);
 assets.newAsset("rock", "../assets/audio/rock.wav", Enum.AssetType.Audio);
 assets.newAsset("click", "../assets/audio/random/click.ogg", Enum.AssetType.Audio);
+assets.newAsset("hover", "../assets/audio/random/hover.ogg", Enum.AssetType.Audio);
 assets.newAsset("bow", "../assets/audio/random/bow.ogg", Enum.AssetType.Audio);
 assets.newAsset("break", "../assets/audio/random/break.ogg", Enum.AssetType.Audio);
 assets.newAsset("classic_hurt", "../assets/audio/random/classic_hurt.ogg", Enum.AssetType.Audio);
