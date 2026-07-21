@@ -3158,23 +3158,32 @@ export class OptionsScreen extends Screen {
             (val) => { engine.config.data.BlurEffects = val }
         );
 
-        const fullScreenSwitch = this.addSwitch(
-            "FullScreen",
-            {
-                "ON": true,
-                "OFF": false
-            },
-            document.fullscreenElement !== null ? "ON" : "OFF",
-            centerX - 260, centerY + 80,
-            un, un, un,
-            (val) => { if (val) {
-        canvasElement.requestFullscreen().catch(err => {
-            console.error(`fullscreen error: ${err.message}`);
-        });
-    } else {
-        document.exitFullscreen();
-            } }
-        );
+        // 1. Vytvoření přepínače
+const fullScreenSwitch = this.addSwitch(
+    "FullScreen",
+    {
+        "ON": true,
+        "OFF": false
+    },
+    document.fullscreenElement !== null ? "ON" : "OFF",
+    centerX - 260, centerY + 80,
+    un, un, un,
+    (val) => { 
+        if (val) {
+            if (!document.fullscreenElement) {
+                this.engine.canvas.requestFullscreen().catch(err => {
+                    console.error(`fullscreen error: ${err.message}`);
+                });
+            }
+        } else {
+            if (document.fullscreenElement) {
+                document.exitFullscreen().catch(err => {
+                    console.error(`exit fullscreen error: ${err.message}`);
+                });
+            }
+        } 
+    }
+);
 
         const doneBut2 = this.addButton("Done", centerX, centerY + 400, un, un, un, () => { this.turnPage(0) });
 
