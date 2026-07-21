@@ -484,6 +484,194 @@ export class AssetList {
 
 
 
+export class WorldStorage {
+    constructor(dbName = 'MinecraftZipWorldsDB', dbVersion = 1) {
+        this.dbName = dbName;
+        this.dbVersion = dbVersion;
+        this.db = null;
+    }
+
+    _init(onSuccess, onError) {
+        if (this.db) {
+            if (onSuccess) onSuccess(this.db);
+            return;
+        }
+
+        const request = indexedDB.open(this.dbName, this.dbVersion);
+
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains('worlds')) {
+                db.createObjectStore('worlds', { keyPath: 'id' });
+            }
+        };
+
+        request.onsuccess = (event) => {
+            this.db = event.target.result;
+            if (onSuccess) onSuccess(this.db);
+        };
+
+        request.onerror = (event) => {
+            if (onError) onError(event.target.error);
+        };
+    }
+
+    import(onSuccess, onError = null) {
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = '.zip';
+
+        fileInput.onchange = (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!file.name.endsWith('.zip')) {
+                const err = new Error('Vybraný soubor není .zip');
+                console.warn(err.message);
+                if (onError) onError(err);
+                return;
+            }
+
+            const worldName = file.name.replace(/\.zip$/i, '');
+            const worldId = 'world_' + Date.now();
+
+            this.saveWorld(
+                worldId,
+                { name: worldName },
+                file,
+                () => {
+                    console.log(`Svět "${worldName}" byl úspěšně uložen do databáze.`);
+                    if (typeof onSuccess === 'function') {
+                        onSuccess(worldId, worldName);
+                    }
+                },
+                onError
+            );
+        };
+
+        fileInput.click();
+    }
+
+    export(id, onError = null) {
+        this.getWorld(id, (worldRecord) => {
+            if (!worldRecord || !worldRecord.zipData) {
+                const err = new Error(`Svět s ID "${id}" nebyl v databázi nalezen.`);
+                console.warn(err.message);
+                if (onError) onError(err);
+                return;
+            }
+
+            const blob = worldRecord.zipData;
+            const url = URL.createObjectURL(blob);
+
+            const fileName = worldRecord.metadata?.name || 'world';
+
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.download = `${fileName}.zip`;
+
+            downloadLink.click();
+
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+            console.log(`Svět "${fileName}" byl úspěšně exportován.`);
+        }, onError);
+    }
+
+    saveWorld(id, metadata = {}, zipBlob, onComplete = null, onError = null) {
+        this._init(() => {
+            const transaction = this.db.transaction(['worlds'], 'readwrite');
+            const store = transaction.objectStore('worlds');
+
+            const record = {
+                id,
+                metadata: {
+                    name: metadata.name || 'Nový Svět',
+                    lastPlayed: Date.now(),
+                    ...metadata
+                },
+                zipData: zipBlob
+            };
+
+            const request = store.put(record);
+
+            request.onsuccess = () => {
+                if (onComplete) onComplete(record);
+            };
+            request.onerror = (event) => {
+                if (onError) onError(event.target.error);
+            };
+        }, onError);
+    }
+
+    getWorldsList(onSuccess, onError = null) {
+        this._init(() => {
+            const transaction = this.db.transaction(['worlds'], 'readonly');
+            const store = transaction.objectStore('worlds');
+            const request = store.getAll();
+
+            request.onsuccess = () => {
+                const records = request.result || [];
+                const list = records.map(({ id, metadata }) => ({ id, ...metadata }));
+                if (onSuccess) onSuccess(list);
+            };
+            request.onerror = (event) => {
+                if (onError) onError(event.target.error);
+            };
+        }, onError);
+    }
+
+    getWorld(id, onSuccess, onError = null) {
+        this._init(() => {
+            const transaction = this.db.transaction(['worlds'], 'readonly');
+            const store = transaction.objectStore('worlds');
+            const request = store.get(id);
+
+            request.onsuccess = () => {
+                if (onSuccess) onSuccess(request.result);
+            };
+            request.onerror = (event) => {
+                if (onError) onError(event.target.error);
+            };
+        }, onError);
+    }
+
+    deleteWorld(id, onComplete = null, onError = null) {
+        this._init(() => {
+            const transaction = this.db.transaction(['worlds'], 'readwrite');
+            const store = transaction.objectStore('worlds');
+            const request = store.delete(id);
+
+            request.onsuccess = () => {
+                if (onComplete) onComplete();
+            };
+            request.onerror = (event) => {
+                if (onError) onError(event.target.error);
+            };
+        }, onError);
+    }
+}
+
+
+
+
+
+
+
+
+export class LevelList {
+    constructor() {
+
+    }
+}
+
+
+
+
+
+
+
+
 export class AssetManager {
     constructor(engine) {
         this.engine = engine;
@@ -2476,162 +2664,6 @@ export class GUISwitchElement extends GUIElement {
     }
 }
 
-export class GUIInputFileButtonElement extends GUIElement {
-    constructor(screen, text = "Input File", x = 0, y = 0, width = 200, height = 20, affectCursor = false) {
-        super(screen);
-
-        this.input = this.engine.input;
-
-        this.normal = [0, 66, 200, 20];
-        this.hovered = [0, 86, 200, 20];
-        this.disabled = [0, 46, 200, 20];
-
-        this.state = this.normal;
-
-        this.interactState = "none";
-        this.pushState = false;
-        this.pushHoverState = false;
-
-        this.mouseHover = false;
-        this.mousePress = false;
-
-        this.affectCursor = affectCursor;
-
-        this.text = text;
-
-        this.x = x;
-        this.y = y;
-        this.width = width;
-        this.height = height;
-
-        this.onClick = new EventList();
-        this.onRelease = new EventList();
-        this.onHover = new EventList();
-        this.onUnHover = new EventList();
-
-        this.clickSound = "click";
-        this.hoverSound = "hover";
-        this.unhoverSound = "release";
-
-        this.clickSound = "click";
-        this.hoverSound = "hover";
-
-        this.scale = 3;
-
-        this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.state);
-        this.title = this.addBitmapText(this.text, 0 + (this.width * this.scale / 2), 0, 0, this.scale);
-    }
-
-    render(ctx) {
-        const mpos = this.input.getInputState("Mouse_Position") || { x: 999999, y: 999999 };
-        const mbuttonDown = this.input.getInputState("Mouse_Button_0") || false;
-        const mtriggerActive = this.input.getInputState("Mouse_Trigger_0") || false;
-
-        this.sprite.x = -(this.width * this.scale / 2);
-        this.sprite.y = -(this.height * this.scale / 2);
-
-        this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
-        this.mousePress = mbuttonDown;
-
-        if (this.mouseHover && this.state != this.disabled) {
-            if (this.mousePress) {
-                if (this.interactState == "hover" && mtriggerActive) {
-                    this.interactState = "push";
-                    this.state = this.hovered;
-                    this.title.color = Enum.Color.SelectButtonColor;
-                }
-
-                if (this.interactState == "none") {
-                    this.interactState = "hover";
-                    this.state = this.hovered;
-                    this.title.color = Enum.Color.SelectButtonColor;
-
-                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
-                    this.onHover.runAll();
-
-                    switch (this.hoverSound) {
-                        case "hover": this.engine.playHover(); break;
-                        case "random": this.engine.playRandom(); break;
-                        case null: break;
-                        default: this.engine.playSound(this.clickSound); break;
-                    }
-
-                    if (this.affectCursor) {
-                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
-                    }
-                }
-
-                if (this.interactState == "push" && this.pushState == false) {
-                    this.pushState = true;
-
-                    this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
-                    this.engine.input_manager.mouseGUIButtonElementClick.runAll(this);
-                    this.onClick.runAll();
-
-                    switch (this.clickSound) {
-                        case "click": this.engine.playClick(); break;
-                        case "random": this.engine.playRandom(); break;
-                        case null: break;
-                        default: this.engine.playSound(this.clickSound); break;
-                    }
-
-                    if (this.mouseHover && this.screen == this.engine.screen && this.affectCursor) {
-                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
-                    }
-                }
-            } else {
-                if (this.interactState == "none" || this.interactState == "push") {
-                    this.interactState = "hover";
-
-                    this.state = this.hovered;
-                    this.title.color = Enum.Color.SelectButtonColor;
-
-                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
-                    this.onHover.runAll();
-
-                    if (this.affectCursor) {
-                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
-                    }
-                }
-                if (this.interactState == "hover" && this.pushState == true) {
-                    this.pushState = false;
-
-                    this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
-                    this.onRelease.runAll();
-                }
-            }
-        } else {
-            if (this.interactState == "hover" || this.interactState == "push") {
-                this.interactState = "none";
-
-                this.state = this.normal;
-                this.title.color = Enum.Color.NormalButtonColor;
-
-                this.engine.input_manager.mouseGUIButtonElementUnHover.runAll(this);
-                this.onUnHover.runAll();
-
-                if (this.affectCursor) {
-                    this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
-                }
-            }
-            if (this.pushState == true) {
-                this.pushState = false;
-                this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
-                this.onRelease.runAll();
-            }
-        }
-
-        this.sprite.cords = this.state;
-        this.sprite.w = this.width * this.scale;
-        this.sprite.h = this.height * this.scale;
-
-        this.title.x = 0 - this.title.getTextWidth() / 2;
-        this.title.y = 0 - this.title.getTextHeight() / 2;
-
-        super.render(ctx);
-    }
-}
-
 
 
 
@@ -3251,11 +3283,10 @@ export class WorldSelectScreen extends Screen {
         const canvasW = 2560;
         const canvasH = 1440;
         const centerX = canvasW / 2;
-        const centerY = canvasH / 2;
         const down = 1440;
-        const up = 0;
-        const left = 2560;
-        const right = 0;
+
+        this.selectedWorldId = null;
+        this.worldButtons = [];
 
         this.gradientImage = createOverlayGradient(canvasW, canvasH);
 
@@ -3270,19 +3301,152 @@ export class WorldSelectScreen extends Screen {
         this.addColorPanel("black", 0, down - 190, canvasW, 190, 0, 0.75);
         this.addBitmapText("Select World", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
 
+        // Akční tlačítka
+        this.playSelectedBut = this.addButton("Play Selected World", centerX - 255, down - 130, 160);
+        this.createNewBut = this.addButton("Create New World", centerX + 255, down - 130, 160);
+        this.renameBut = this.addButton("Rename", centerX - 255 - 127, down - 55, 75);
+        this.deleteBut = this.addButton("Delete", centerX - 255 + 127, down - 55, 75);
+        this.cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160);
 
-        const cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160);
-        const createNewBut = this.addButton("Create New World", centerX + 255, down - 130, 160);
-        const playSelectedBut = this.addButton("Play Selected World", centerX - 255, down - 130, 160);
-        const renameBut = this.addButton("Rename", centerX - 255 - 127, down - 55, 75);
-        const deleteBut = this.addButton("Delete", centerX - 255 + 127, down - 55, 75);
+        // Eventy tlačítek
+        this.createNewBut.onClick.addEvent(() => { engine.setScreen(engine.createWorldScreen); });
+        this.cancelBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen); });
 
-        playSelectedBut.state = playSelectedBut.disabled;
-        renameBut.state = renameBut.disabled
-        deleteBut.state = deleteBut.disabled
+        // Spuštění vybraného světa (načte blob/data z IndexedDB)
+        this.playSelectedBut.onClick.addEvent(() => {
+            if (this.selectedWorldId && engine.worldStorage) {
+                engine.worldStorage.getWorld(this.selectedWorldId, (worldRecord) => {
+                    if (worldRecord && engine.loadWorld) {
+                        engine.loadWorld(worldRecord);
+                    }
+                });
+            }
+        });
 
-        createNewBut.onClick.addEvent(() => { engine.setScreen(engine.createWorldScreen) });
-        cancelBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen) });
+        // Smazání světa z IndexedDB
+        this.deleteBut.onClick.addEvent(() => {
+            if (!this.selectedWorldId || !engine.worldStorage) return;
+
+            const idToDelete = this.selectedWorldId;
+
+            engine.worldStorage.deleteWorld(
+                idToDelete,
+                () => {
+                    // Callback po úspěšném smazání z databáze
+                    this.selectedWorldId = null;
+                    this.refreshWorldList();
+                },
+                (err) => {
+                    console.error("Chyba při mazání světa:", err);
+                }
+            );
+        });
+
+        // Přejmenování světa v IndexedDB
+        this.renameBut.onClick.addEvent(() => {
+            if (!this.selectedWorldId || !engine.worldStorage) return;
+
+            const currentId = this.selectedWorldId;
+
+            // Najedeme si kompletní záznam z DB
+            engine.worldStorage.getWorld(
+                currentId,
+                (worldRecord) => {
+                    if (!worldRecord) return;
+
+                    const oldName = worldRecord.metadata?.name || "";
+                    const newName = prompt("Enter new world name:", oldName);
+
+                    if (newName && newName.trim() !== "" && newName.trim() !== oldName) {
+                        // Aktualizujeme metadata
+                        const updatedMetadata = {
+                            ...worldRecord.metadata,
+                            name: newName.trim()
+                        };
+
+                        // Zachováme původní ZIP data (pokud existují, jinak undefined/null)
+                        const zipData = worldRecord.zipData || null;
+
+                        engine.worldStorage.saveWorld(
+                            currentId,
+                            updatedMetadata,
+                            zipData,
+                            () => {
+                                // Callback po úspěšném uložení zmen
+                                this.refreshWorldList();
+                            },
+                            (err) => {
+                                console.error("Chyba při přejmenování světa:", err);
+                            }
+                        );
+                    }
+                },
+                (err) => {
+                    console.error("Chyba při načítání světa k přejmenování:", err);
+                }
+            );
+        });
+
+        this.updateButtonStates();
+    }
+
+    refreshWorldList() {
+        // 1. Bezpečné odstranění starých tlačítek
+        const page = typeof this.getPage === 'function' ? this.getPage() : null;
+        const elements = page?.elements || this.elements || [];
+
+        this.worldButtons.forEach(btn => {
+            // Pokud má tlačítko vlastní destroy/remove metodu, použijeme ji
+            if (typeof btn.destroy === 'function') {
+                btn.destroy();
+            } else if (typeof btn.remove === 'function') {
+                btn.remove();
+            } else if (Array.isArray(elements)) {
+                const idx = elements.indexOf(btn);
+                if (idx !== -1) {
+                    elements.splice(idx, 1);
+                }
+            }
+        });
+        this.worldButtons = [];
+
+        // 2. Kontrola dostupnosti storage
+        const storage = this.engine?.worldStorage;
+        if (!storage || typeof storage.getWorldsList !== 'function') {
+            console.warn("WorldStorage nebo metoda getWorldsList není k dispozici.");
+            this.updateButtonStates();
+            return;
+        }
+
+        // 3. Asynchronní načtení světů z IndexedDB
+        storage.getWorldsList((worlds) => {
+            const canvasW = 2560;
+            const centerX = canvasW / 2;
+            let startY = 180;
+
+            (worlds || []).forEach((world) => {
+                const isSelected = this.selectedWorldId === world.id;
+                const dateStr = new Date(world.lastPlayed || Date.now()).toLocaleDateString();
+                const btnText = `${isSelected ? "> " : ""}${world.name || "Unnamed"} (${dateStr})`;
+
+                const btn = this.addButton(btnText, centerX, startY, 400, un, un, () => {
+                    this.selectedWorldId = world.id;
+                    this.refreshWorldList();
+                });
+
+                this.worldButtons.push(btn);
+                startY += 85;
+            });
+
+            this.updateButtonStates();
+        });
+    }
+
+    updateButtonStates() {
+        const hasSelection = this.selectedWorldId !== null;
+        this.playSelectedBut.disabled = !hasSelection;
+        this.renameBut.disabled = !hasSelection;
+        this.deleteBut.disabled = !hasSelection;
     }
 
     init() {
@@ -3295,6 +3459,9 @@ export class WorldSelectScreen extends Screen {
 
             this.engine.setPanorama(p0, p1, p2, p3, p4, p5); this.engine.camera.position.set(0, 0, 0);
         }
+
+        this.selectedWorldId = null;
+        this.refreshWorldList();
     }
 
     render(ctx) {
@@ -3323,25 +3490,77 @@ export class CreateWorldScreen extends Screen {
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
         const down = 1440;
-        const up = 0;
-        const left = 2560;
-        const right = 0;
 
-        this.gradientImage = createOverlayGradient(canvasW, canvasH);
+        this.worldName = "New World";
+        this.gameMode = "Survival";
+        this.seed = Math.floor(Math.random() * 1000000000).toString();
 
-        this.blur = this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
-        this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
         this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
         this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
         this.addBitmapText("Create World", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
 
-        const cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160);
-        const createBut = this.addButton("Create New World", centerX - 255, down - 55, 160);
+        // Vstup pro název
+        this.nameBtn = this.addButton(`World Name: ${this.worldName}`, centerX, centerY - 200, 300, un, un, () => {
+            const input = prompt("Enter World Name:", this.worldName);
+            if (input && input.trim() !== "") {
+                this.worldName = input.trim();
+                this.nameBtn.text = `World Name: ${this.worldName}`;
+            }
+        });
 
-        cancelBut.onClick.addEvent(() => { engine.setScreen(engine.worldSelectScreen) });
-        this.p = 0;
-        createBut.onClick.addEvent(() => { this.p = 1 });
-        createBut.onRelease.addEvent(() => { this.p = 0 });
+        // Přepínač herního módu
+        this.modeBtn = this.addSwitch(
+            "Game Mode",
+            { "Survival": "Survival", "Creative": "Creative", "Hardcore": "Hardcore" },
+            this.gameMode,
+            centerX, centerY - 100, 300, un, un,
+            (val) => { this.gameMode = val; }
+        );
+
+        // Vstup pro Seed
+        this.seedBtn = this.addButton(`Seed: ${this.seed}`, centerX, centerY, 300, un, un, () => {
+            const input = prompt("Enter Seed (leave empty for random):", this.seed);
+            if (input !== null) {
+                this.seed = input.trim() || Math.floor(Math.random() * 1000000000).toString();
+                this.seedBtn.text = `Seed: ${this.seed}`;
+            }
+        });
+
+        // Import ZIP světa do IndexedDB
+        this.importBut = this.addButton("Import World (.zip)", centerX, centerY + 120, 300, un, un, () => {
+            if (engine.worldStorage) {
+                engine.worldStorage.import(() => {
+                    engine.setScreen(engine.worldSelectScreen);
+                });
+            }
+        });
+
+        // Vytvoření nového světa
+        const createBut = this.addButton("Create New World", centerX - 255, down - 55, 160, un, un, () => {
+            if (engine.worldStorage) {
+                const worldId = 'world_' + Date.now();
+                const metadata = {
+                    name: this.worldName,
+                    mode: this.gameMode,
+                    seed: this.seed,
+                    created: Date.now(),
+                    lastPlayed: Date.now()
+                };
+
+                // Uložení prázdného/nového světa bez ZIP balíčku
+                engine.worldStorage.saveWorld(worldId, metadata, null, (savedRecord) => {
+                    if (engine.loadWorld) {
+                        engine.loadWorld(savedRecord);
+                    } else {
+                        engine.setScreen(engine.worldSelectScreen);
+                    }
+                });
+            }
+        });
+
+        const cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160, un, un, () => {
+            engine.setScreen(engine.worldSelectScreen);
+        });
     }
 
     init() {
@@ -3354,13 +3573,14 @@ export class CreateWorldScreen extends Screen {
 
             this.engine.setPanorama(p0, p1, p2, p3, p4, p5); this.engine.camera.position.set(0, 0, 0);
         }
+
+        this.worldName = "New World";
+        this.seed = Math.floor(Math.random() * 1000000000).toString();
+        if (this.nameBtn) this.nameBtn.text = `World Name: ${this.worldName}`;
+        if (this.seedBtn) this.seedBtn.text = `Seed: ${this.seed}`;
     }
 
     render(ctx) {
-        this.blur.visible = this.engine.config.data.BlurEffects;
-
-        this.bg.patternOffsetX += this.p;
-        this.bg.patternOffsetY += this.p;
         const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
         const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
         const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
@@ -3476,7 +3696,7 @@ export class CanvasRenderer {
         this.ctx.imageSmoothingEnabled = false;
     }
 
-    render() {        
+    render() {
         const rawFactor = this.engine.config?.data?.RenderFactor;
         this.RENDER_SCALE_FACTOR = (typeof rawFactor === 'number' && rawFactor > 0) ? rawFactor : 1;
         const renderWidth = Math.max(1, Math.floor(this.VIRTUAL_WIDTH * this.RENDER_SCALE_FACTOR));
@@ -3842,6 +4062,8 @@ export class VoxWheel {
         this.bitmap_font = new BitmapFont(this, "font");
 
         this.date = new Date();
+
+        this.worldStorage = new WorldStorage();
 
         this.assetLoadingScreen = new AssetLoadingScreen(this);
         this.logoScreen = new LogoScreen(this);
