@@ -1953,8 +1953,6 @@ export class GUIButtonElement extends GUIElement {
         this.hoverSound = "hover";
         this.unhoverSound = "release";
 
-        if (onClickEvent) this.onClick.addEvent(onClickEvent);
-
         this.clickSound = "click";
         this.hoverSound = "hover";
 
@@ -2129,8 +2127,6 @@ export class GUISliderElement extends GUIElement {
         this.clickSound = "click";
         this.hoverSound = "hover";
         this.unhoverSound = "release";
-
-        if (onSlideEvent) this.onSlide.addEvent(onSlideEvent);
 
         this.scale = 3;
 
@@ -2326,8 +2322,6 @@ export class GUISwitchElement extends GUIElement {
         this.hoverSound = "hover";
         this.unhoverSound = "release";
 
-        if (onSwitchEvent) this.onSwitch.addEvent(onSwitchEvent);
-
         this.scale = 3;
 
         this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.state);
@@ -2351,7 +2345,7 @@ export class GUISwitchElement extends GUIElement {
 
         this.title.text = `${this.text}: ${this.value}`;
 
-        this.onSwitch.runAll(this.value, associatedValue);
+        this.onSwitch.runAll(associatedValue);
     }
 
     render(ctx) {
@@ -2511,10 +2505,6 @@ export class GUIInputFileButtonElement extends GUIElement {
 
         this.clickSound = "click";
         this.hoverSound = "hover";
-        this.unhoverSound = "release";
-
-        this.clickSound = "click";
-        this.hoverSound = "hover";
 
         this.scale = 3;
 
@@ -2580,18 +2570,24 @@ export class GUIInputFileButtonElement extends GUIElement {
                     }
                 }
             } else {
-                if (this.interactState == "none" || this.interactState == "push") {
+                if (this.interactState == "none") {
                     this.interactState = "hover";
-
-                    this.state = this.hovered;
                     this.title.color = Enum.Color.SelectButtonColor;
-
+                    this.state = this.hovered;
                     this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
                     this.onHover.runAll();
-
-                    if (this.affectCursor) {
-                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                    switch (this.hoverSound) {
+                        case "hover": this.engine.playHover(); break;
+                        case "random": this.engine.playRandom(); break;
+                        case null: break;
+                        default: this.engine.playSound(this.clickSound); break;
                     }
+                    if (this.affectCursor) this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                } else if (this.interactState == "push") {
+                    this.interactState = "hover";
+                    this.title.color = Enum.Color.SelectButtonColor;
+                    this.state = this.hovered;
+                    if (this.affectCursor) this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
                 }
                 if (this.interactState == "hover" && this.pushState == true) {
                     this.pushState = false;
@@ -2609,6 +2605,13 @@ export class GUIInputFileButtonElement extends GUIElement {
 
                 this.engine.input_manager.mouseGUIButtonElementUnHover.runAll(this);
                 this.onUnHover.runAll();
+
+                switch (this.unhoverSound) {
+                    case "release": this.engine.playRelease(); break;
+                    case "random": this.engine.playRandom(); break;
+                    case null: break;
+                    default: this.engine.playSound(this.clickSound); break;
+                }
 
                 if (this.affectCursor) {
                     this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
@@ -3114,8 +3117,37 @@ export class OptionsScreen extends Screen {
             un, un, un,
             (val) => { engine.config.data.Particles = val }
         );
+        const blurEffectsSwitch = this.addSwitch(
+            "Blur Effects",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data.BlurEffects ? "ON" : "OFF",
+            centerX + 260, centerY
+        );
 
-        const doneBut2 = this.addButton("Done", centerX, centerY + 400, un, un, un, () => { this.turnPage(0) });
+        const doneBut2 = this.addButton("Done", centerX, centerY + 400);
+
+        graphicsSwitch.onSwitch.addEvent((vol) => { engine.config.data.Graphics = vol });
+        renderDistanceSwitch.onSwitch.addEvent((vol) => { engine.config.data.RenderDistance = vol });
+
+        smoothLightingSwitch.onSwitch.addEvent((vol) => { engine.config.data.SmoothLighting = vol });
+        performanceSwitch.onSwitch.addEvent((vol) => { engine.config.data.Performance = vol });
+
+        threeDAnaglyphSwitch.onSwitch.addEvent((vol) => { engine.config.data["3DAnaglyph"] = vol });
+        viewBobbingSwitch.onSwitch.addEvent((vol) => { engine.config.data.ViewBobbing = vol });
+
+        guiScaleSwitch.onSwitch.addEvent((vol) => { engine.config.data.GUIScale = vol });
+        advancedWebGL.onSwitch.addEvent((vol) => { engine.config.data.AdvancedWebGL = vol });
+
+        brightnessSlider.onSlide.addEvent((vol) => { engine.config.data.Brightness = vol });
+        cloudsSwitch.onSwitch.addEvent((vol) => { engine.config.data.Clouds = vol });
+
+        particlesSwitch.onSwitch.addEvent((vol) => { engine.config.data.Particles = vol });
+        blurEffectsSwitch.onSwitch.addEvent((vol) => { engine.config.data.BlurEffects = vol });
+
+        doneBut2.onClick.addEvent(() => { this.turnPage(0) });
 
         this.turnPage(2);
 
@@ -3170,8 +3202,10 @@ export class OptionsScreen extends Screen {
             -10000, 10000, 50,
             engine.config.data.MenuSpinSpeed,
             centerX, centerY - 400,
-            250, un, un,
-            (vol) => { engine.config.data.MenuSpinSpeed = vol }
+            800
+        );
+
+        menuSpinSpeedSlider.onSlide.addEvent((vol) => { engine.config.data.MenuSpinSpeed = vol });
         );
 
         const extraSoundsSwitch = this.addSwitch(
@@ -3182,27 +3216,9 @@ export class OptionsScreen extends Screen {
             },
             engine.config.data.ExtraSounds ? "ON" : "OFF",
             centerX, centerY - 300,
-            un, un, un,
-            (val) => { engine.config.data.ExtraSounds = val }
         );
 
-        const renderFactorSwitch = this.addSwitch(
-            "Render Factor",
-            {
-                "0.05x": 0.05,
-                "0.1x": 0.1,
-                "0.2x": 0.2,
-                "0.4x": 0.4,
-                "0.8x": 0.8,
-                "1x": 1,
-                "1.5x": 1.5,
-                "2x": 2
-            },
-            engine.config.data.RenderFactor + "x",
-            centerX, centerY - 200,
-            un, un, un,
-            (val) => { engine.config.data.RenderFactor = parseFloat(val) }
-        );
+        extraSoundsSwitch.onSwitch.addEvent((vol) => { engine.config.data.ExtraSounds = vol });
 
         const doneBut4 = this.addButton("Done", centerX, centerY + 400, un, un, un, () => { this.turnPage(0) });
     }
@@ -3318,7 +3334,7 @@ export class CreateWorldScreen extends Screen {
 
         this.gradientImage = createOverlayGradient(canvasW, canvasH);
 
-        this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        //this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
         this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
         this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
         this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
@@ -3466,17 +3482,14 @@ export class CanvasRenderer {
     render() {
         const rawFactor = this.engine.config?.data?.RenderFactor;
         this.RENDER_SCALE_FACTOR = (typeof rawFactor === 'number' && rawFactor > 0) ? rawFactor : 1;
-        log(this.engine.config?.data?.RenderFactor)
         const renderWidth = Math.max(1, Math.floor(this.VIRTUAL_WIDTH * this.RENDER_SCALE_FACTOR));
         const renderHeight = Math.max(1, Math.floor(this.VIRTUAL_HEIGHT * this.RENDER_SCALE_FACTOR));
 
         this.engine.renderer.setSize(renderWidth, renderHeight, false);
-
         this.engine.renderer.render(this.engine.scene, this.engine.camera);
 
         this.ctx.clearRect(0, 0, this.VIRTUAL_WIDTH, this.VIRTUAL_HEIGHT);
         this.ctx.drawImage(this.renderCanvas, 0, 0, this.VIRTUAL_WIDTH, this.VIRTUAL_HEIGHT);
-
         this.engine.renderGUI();
     }
 }
@@ -3835,6 +3848,7 @@ export class VoxWheel {
         this.optionsScreen = new OptionsScreen(this);
         this.worldSelectScreen = new WorldSelectScreen(this);
         this.createWorldScreen = new CreateWorldScreen(this);
+        this.errorScreen = new ErrorScreen(this);
     }
 
     ms() {
