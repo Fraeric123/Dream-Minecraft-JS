@@ -3158,7 +3158,7 @@ export class OptionsScreen extends Screen {
             (val) => { engine.config.data.BlurEffects = val }
         );
 
-        // 1. Vytvoření přepínače
+        
 const fullScreenSwitch = this.addSwitch(
     "FullScreen",
     {
@@ -3174,6 +3174,7 @@ const fullScreenSwitch = this.addSwitch(
                 this.engine.canvas.requestFullscreen().catch(err => {
                     console.error(`fullscreen error: ${err.message}`);
                 });
+                screen.orientation.lock('landscape');
             }
         } else {
             if (document.fullscreenElement) {
