@@ -3165,7 +3165,7 @@ export class OptionsScreen extends Screen {
                 "OFF": false
             },
             document.fullscreenElement !== null ? "ON" : "OFF",
-            centerX + 260, centerY,
+            centerX - 260, centerY + 80,
             un, un, un,
             (val) => { if (val) {
         canvasElement.requestFullscreen().catch(err => {
