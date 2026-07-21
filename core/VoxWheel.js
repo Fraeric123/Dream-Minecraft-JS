@@ -3206,7 +3206,6 @@ export class OptionsScreen extends Screen {
         );
 
         menuSpinSpeedSlider.onSlide.addEvent((vol) => { engine.config.data.MenuSpinSpeed = vol });
-        );
 
         const extraSoundsSwitch = this.addSwitch(
             "Extra Sounds",
