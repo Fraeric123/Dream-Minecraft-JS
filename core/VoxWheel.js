@@ -2930,7 +2930,7 @@ export class OptionsScreen extends Screen {
                 0: "Music: OFF"
             },
             "", "%",
-            0, 100, 1,
+            0, 200, 1,
             this.engine.config.data.Music,
             centerX - 260, centerY - 400,
             un, un, un,
@@ -2942,7 +2942,7 @@ export class OptionsScreen extends Screen {
                 0: "Sound: OFF"
             },
             "", "%",
-            0, 100, 1,
+            0, 200, 1,
             this.engine.config.data.MasterVolume,
             centerX + 260, centerY - 400,
             un, un, un,
