@@ -723,7 +723,7 @@ export class AssetManager {
             throw error;
         }
 
-        await sleep(50);
+        //await sleep(50);
     }
 
     async loadAll() {
@@ -3301,18 +3301,15 @@ export class WorldSelectScreen extends Screen {
         this.addColorPanel("black", 0, down - 190, canvasW, 190, 0, 0.75);
         this.addBitmapText("Select World", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
 
-        // Akční tlačítka
         this.playSelectedBut = this.addButton("Play Selected World", centerX - 255, down - 130, 160);
         this.createNewBut = this.addButton("Create New World", centerX + 255, down - 130, 160);
         this.renameBut = this.addButton("Rename", centerX - 255 - 127, down - 55, 75);
         this.deleteBut = this.addButton("Delete", centerX - 255 + 127, down - 55, 75);
         this.cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160);
 
-        // Eventy tlačítek
         this.createNewBut.onClick.addEvent(() => { engine.setScreen(engine.createWorldScreen); });
         this.cancelBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen); });
 
-        // Spuštění vybraného světa (načte blob/data z IndexedDB)
         this.playSelectedBut.onClick.addEvent(() => {
             if (this.selectedWorldId && engine.worldStorage) {
                 engine.worldStorage.getWorld(this.selectedWorldId, (worldRecord) => {
@@ -3323,7 +3320,6 @@ export class WorldSelectScreen extends Screen {
             }
         });
 
-        // Smazání světa z IndexedDB
         this.deleteBut.onClick.addEvent(() => {
             if (!this.selectedWorldId || !engine.worldStorage) return;
 
@@ -3332,7 +3328,6 @@ export class WorldSelectScreen extends Screen {
             engine.worldStorage.deleteWorld(
                 idToDelete,
                 () => {
-                    // Callback po úspěšném smazání z databáze
                     this.selectedWorldId = null;
                     this.refreshWorldList();
                 },
@@ -3342,13 +3337,11 @@ export class WorldSelectScreen extends Screen {
             );
         });
 
-        // Přejmenování světa v IndexedDB
         this.renameBut.onClick.addEvent(() => {
             if (!this.selectedWorldId || !engine.worldStorage) return;
 
             const currentId = this.selectedWorldId;
 
-            // Najedeme si kompletní záznam z DB
             engine.worldStorage.getWorld(
                 currentId,
                 (worldRecord) => {
@@ -3358,13 +3351,11 @@ export class WorldSelectScreen extends Screen {
                     const newName = prompt("Enter new world name:", oldName);
 
                     if (newName && newName.trim() !== "" && newName.trim() !== oldName) {
-                        // Aktualizujeme metadata
                         const updatedMetadata = {
                             ...worldRecord.metadata,
                             name: newName.trim()
                         };
 
-                        // Zachováme původní ZIP data (pokud existují, jinak undefined/null)
                         const zipData = worldRecord.zipData || null;
 
                         engine.worldStorage.saveWorld(
@@ -3372,7 +3363,6 @@ export class WorldSelectScreen extends Screen {
                             updatedMetadata,
                             zipData,
                             () => {
-                                // Callback po úspěšném uložení zmen
                                 this.refreshWorldList();
                             },
                             (err) => {
@@ -3391,12 +3381,10 @@ export class WorldSelectScreen extends Screen {
     }
 
     refreshWorldList() {
-        // 1. Bezpečné odstranění starých tlačítek
         const page = typeof this.getPage === 'function' ? this.getPage() : null;
         const elements = page?.elements || this.elements || [];
 
         this.worldButtons.forEach(btn => {
-            // Pokud má tlačítko vlastní destroy/remove metodu, použijeme ji
             if (typeof btn.destroy === 'function') {
                 btn.destroy();
             } else if (typeof btn.remove === 'function') {
@@ -3410,7 +3398,6 @@ export class WorldSelectScreen extends Screen {
         });
         this.worldButtons = [];
 
-        // 2. Kontrola dostupnosti storage
         const storage = this.engine?.worldStorage;
         if (!storage || typeof storage.getWorldsList !== 'function') {
             console.warn("WorldStorage nebo metoda getWorldsList není k dispozici.");
@@ -3418,7 +3405,6 @@ export class WorldSelectScreen extends Screen {
             return;
         }
 
-        // 3. Asynchronní načtení světů z IndexedDB
         storage.getWorldsList((worlds) => {
             const canvasW = 2560;
             const centerX = canvasW / 2;
@@ -3499,7 +3485,6 @@ export class CreateWorldScreen extends Screen {
         this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
         this.addBitmapText("Create World", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
 
-        // Vstup pro název
         this.nameBtn = this.addButton(`World Name: ${this.worldName}`, centerX, centerY - 200, 300, un, un, () => {
             const input = prompt("Enter World Name:", this.worldName);
             if (input && input.trim() !== "") {
@@ -3508,7 +3493,6 @@ export class CreateWorldScreen extends Screen {
             }
         });
 
-        // Přepínač herního módu
         this.modeBtn = this.addSwitch(
             "Game Mode",
             { "Survival": "Survival", "Creative": "Creative", "Hardcore": "Hardcore" },
@@ -3517,16 +3501,11 @@ export class CreateWorldScreen extends Screen {
             (val) => { this.gameMode = val; }
         );
 
-        // Vstup pro Seed
         this.seedBtn = this.addButton(`Seed: ${this.seed}`, centerX, centerY, 300, un, un, () => {
-            const input = prompt("Enter Seed (leave empty for random):", this.seed);
-            if (input !== null) {
-                this.seed = input.trim() || Math.floor(Math.random() * 1000000000).toString();
+                this.seed = Math.floor(Math.random() * 1000000000).toString();
                 this.seedBtn.text = `Seed: ${this.seed}`;
-            }
         });
 
-        // Import ZIP světa do IndexedDB
         this.importBut = this.addButton("Import World (.zip)", centerX, centerY + 120, 300, un, un, () => {
             if (engine.worldStorage) {
                 engine.worldStorage.import(() => {
@@ -3535,7 +3514,6 @@ export class CreateWorldScreen extends Screen {
             }
         });
 
-        // Vytvoření nového světa
         const createBut = this.addButton("Create New World", centerX - 255, down - 55, 160, un, un, () => {
             if (engine.worldStorage) {
                 const worldId = 'world_' + Date.now();
@@ -3547,7 +3525,6 @@ export class CreateWorldScreen extends Screen {
                     lastPlayed: Date.now()
                 };
 
-                // Uložení prázdného/nového světa bez ZIP balíčku
                 engine.worldStorage.saveWorld(worldId, metadata, null, (savedRecord) => {
                     if (engine.loadWorld) {
                         engine.loadWorld(savedRecord);
@@ -3928,7 +3905,7 @@ export class ConfigList {
             "ViewBobbing": true,
             "AdvancedWebGL": true,
             "Clouds": true,
-            "BlurEffects": true,
+            "BlurEffects": false,
             "ExtraSounds": false,
 
             "Difficulty": Enum.Difficulty.Normal,
