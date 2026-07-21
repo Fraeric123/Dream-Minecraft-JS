@@ -3741,7 +3741,6 @@ export class InputList {
 
 
 
-
 export class InputManager extends Manager {
     constructor(engine) {
         super(engine);
@@ -3791,17 +3790,21 @@ export class InputManager extends Manager {
         });
 
         if (inputCanvas) {
-            inputCanvas.addEventListener('mousemove', (e) => {
+            // Helper pro výpočet pozice dotyku/myši na canvasu
+            const getCanvasPos = (clientX, clientY) => {
                 const rect = inputCanvas.getBoundingClientRect();
+                const cssX = clientX - rect.left;
+                const cssY = clientY - rect.top;
 
-                const cssX = e.clientX - rect.left;
-                const cssY = e.clientY - rect.top;
-
-                const pos = {
+                return {
                     x: cssX * (inputCanvas.width / rect.width),
                     y: cssY * (inputCanvas.height / rect.height)
                 };
+            };
 
+            // --- MYŠ ---
+            inputCanvas.addEventListener('mousemove', (e) => {
+                const pos = getCanvasPos(e.clientX, e.clientY);
                 input.setInputState('Mouse_Position', pos);
                 this.mouseMoved.runAll(pos);
             });
@@ -3822,6 +3825,55 @@ export class InputManager extends Manager {
             });
 
             inputCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+
+            // --- DOTYKOVÉ OVLÁDÁNÍ (TOUCH) ---
+
+            inputCanvas.addEventListener('touchstart', (e) => {
+                e.preventDefault(); // Zabrání gestům prohlížeče a emulaci myši
+
+                if (e.touches.length > 0) {
+                    const touch = e.touches[0]; // První dotyk
+                    const pos = getCanvasPos(touch.clientX, touch.clientY);
+
+                    // Aktualizujeme pozici a stiskneme levé tlačítko (0)
+                    input.setInputState('Mouse_Position', pos);
+                    this.mouseMoved.runAll(pos);
+
+                    input.setInputState('Mouse_Button_0', true);
+                    input.setInputState('Mouse_Click_0', true);
+                    this.mouseButtonPressed.runAll(0);
+                }
+            }, { passive: false });
+
+            inputCanvas.addEventListener('touchmove', (e) => {
+                e.preventDefault();
+
+                if (e.touches.length > 0) {
+                    const touch = e.touches[0];
+                    const pos = getCanvasPos(touch.clientX, touch.clientY);
+
+                    input.setInputState('Mouse_Position', pos);
+                    this.mouseMoved.runAll(pos);
+                }
+            }, { passive: false });
+
+            inputCanvas.addEventListener('touchend', (e) => {
+                e.preventDefault();
+
+                // Pokud nezůstal žádný dotyk, uvolníme levé tlačítko
+                if (e.touches.length === 0) {
+                    input.setInputState('Mouse_Button_0', false);
+                    this.mouseButtonReleased.runAll(0);
+                }
+            }, { passive: false });
+
+            inputCanvas.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+
+                input.setInputState('Mouse_Button_0', false);
+                this.mouseButtonReleased.runAll(0);
+            }, { passive: false });
         }
     }
 
