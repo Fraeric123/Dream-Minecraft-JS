@@ -2,7 +2,7 @@
 
 
 
-const build = 31;
+const build = 32;
 
 
 
@@ -2800,6 +2800,15 @@ export class AssetLoadingScreen extends Screen {
     constructor(engine) {
         super(engine);
 
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+        const down = 1440;
+        const up = 0;
+        const left = 2560;
+        const right = 0;
+
         this.engine.asset_manager.onProgress.addEvent((progress) => {
             this.render(this.engine.ctx);
             this.assetLoaded(progress);
@@ -2807,18 +2816,18 @@ export class AssetLoadingScreen extends Screen {
         });
 
         this.addColorPanel("black", 0, 0, 2560, 1440);
-        //this.addBitmapText("Minecraft asset loading", 15, 15, 0, 16);
-        //this.Pic = this.addTexturePanel("terrain", 100, 400, 900, 500);
-        //this.Text = this.addBitmapText("", 10, 320, 0, 5, 0x777777);
+        this.addBitmapText("Minecraft asset loading", 400, 15, 0, 16);
+        this.Pic = this.addTexturePanel("terrain", 900, 400, 900, 500);
+        this.Text = this.addBitmapText("", centerX, 320, 0, 5, 0x777777, un, un, true);
     }
 
     assetLoaded(progress) {
-        //this.Text.text = `Loaded: ${progress.asset.path} (${Math.round(progress.value * 100)}%)`;
+        this.Text.text = `Loaded: ${progress.asset.path} (${Math.round(progress.value * 100)}%)`;
 
         if (progress.asset.type == Enum.AssetType.Texture) {
-            //this.Pic.textureID = progress.asset.id;
+            this.Pic.textureID = progress.asset.id;
         } else {
-            //this.Pic.textureID = "pack";
+            this.Pic.textureID = "pack";
         }
     }
 }
@@ -2828,19 +2837,28 @@ export class LogoScreen extends Screen {
     constructor(engine) {
         super(engine);
 
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+        const down = 1440;
+        const up = 0;
+        const left = 2560;
+        const right = 0;
+
         this.addColorPanel("black", 0, 0, 2560, 1440);
-        //this.addBitmapText("Logo", 15, 15, 0, 16);
+        this.addBitmapText("Logo", centerX, 300, 0, 16, un, un, un, true);
         //this.Pic = this.addTexturePanel("font", -500, 500, 5000, 500);
-        //this.Text = this.addBitmapText("num", 10, 320, 0, 10, 0x777777);
+        this.Text = this.addBitmapText("num", centerX, 700, 0, 10, 0x777777, un, un, true);
 
         this.renderTime = 0;
     }
 
     render(ctx) {
         this.renderTime++;
-        //this.Text.text = this.renderTime.toString();
+        this.Text.text = this.renderTime.toString();
 
-        if (this.renderTime > 50) {
+        if (this.renderTime > 20) {
             this.engine.setScreen(this.engine.menuScreen);
         }
 
@@ -2938,7 +2956,7 @@ export class OptionsScreen extends Screen {
                 0: "Music: OFF"
             },
             "", "%",
-            0, 200, 1,
+            0, 100, 1,
             this.engine.config.data.Music,
             centerX - 260, centerY - 400,
             un, un, un,
@@ -2950,7 +2968,7 @@ export class OptionsScreen extends Screen {
                 0: "Sound: OFF"
             },
             "", "%",
-            0, 200, 1,
+            0, 100, 1,
             this.engine.config.data.MasterVolume,
             centerX + 260, centerY - 400,
             un, un, un,
@@ -4133,7 +4151,7 @@ export class RenderState {
 export class ConfigList {
     constructor() {
         this.data = {
-            "MasterVolume": 50,
+            "MasterVolume": 100,
             "Music": 100,
             "Sensitivity": 100,
             "FOV": 70,
