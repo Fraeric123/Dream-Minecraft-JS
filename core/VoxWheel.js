@@ -2,7 +2,7 @@
 
 
 
-const build = 34;
+const build = 35;
 
 
 
@@ -3406,12 +3406,12 @@ export class WorldSelectScreen extends Screen {
 
         this.blur = this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
         this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
-        this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 0);
+        this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
         this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
         this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.55);
-        this.addTiledTexturePanel("dirt", 0, 0, canvasW, 120, 6.8, 0, 1);
+        this.bg2 = this.addTiledTexturePanel("dirt", 0, 0, canvasW, 120, 6.8, 0, 1);
         this.addColorPanel("black", 0, 0, canvasW, 120, 0, 0.75);
-        this.addTiledTexturePanel("dirt", 0, down - 190, canvasW, 190, 6.8, 0, 1);
+        this.bg3 = this.addTiledTexturePanel("dirt", 0, down - 190, canvasW, 190, 6.8, 0, 1);
         this.addColorPanel("black", 0, down - 190, canvasW, 190, 0, 0.75);
         this.addBitmapText("Select World", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
 
@@ -3566,8 +3566,11 @@ export class WorldSelectScreen extends Screen {
         const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
         const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
 
-        this.bg.patternOffsetY = 500 * (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
-        this.bg.patternOffsetX = 500 * (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
+        const patternY = 500 * (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
+        const patternX = 500 * (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
+
+        this.bg.patternOffsetY = patternY;
+        this.bg.patternOffsetX = patternX;
 
         this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
 
