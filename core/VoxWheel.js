@@ -2,7 +2,7 @@
 
 
 
-const build = 33;
+const build = 34;
 
 
 
@@ -2934,7 +2934,7 @@ export class MenuScreen extends Screen {
         const canvasW = 2560;
         const canvasH = 1440;
         const centerX = canvasW / 2;
-        const centerY = canvasH / 2;
+        const centerY = (canvasH / 2)+100;
         const down = 1440;
         const up = 0;
         const left = 2560;
@@ -2953,9 +2953,9 @@ export class MenuScreen extends Screen {
         this.addBitmapText("Alpha Test Build no." + build, 10, down - 60, 0, 3);
         this.addBitmapText("not Minecraft 1.0.0", 10, down - 30, 0, 3);
 
-        const playBut = this.addButton("Play", centerX, centerY - 100, un, un, un, () => { engine.setScreen(engine.worldSelectScreen) });
-        const optionsBut = this.addButton("Options", centerX, centerY - 30, un, un, un, () => { engine.setScreen(engine.optionsScreen) });
-        const exitBut = this.addButton("Exit", centerX, centerY + 40, un, un, un, () => { window.close() });
+        const playBut = this.addButton("Singleplayer", centerX, centerY - 100, un, un, un, () => { engine.setScreen(engine.worldSelectScreen) });
+        const optionsBut = this.addButton("Options", centerX - 153, centerY - 30, 98, un, un, () => { engine.setScreen(engine.optionsScreen) });
+        const exitBut = this.addButton("Quit Game", centerX + 153, centerY - 30, 98, un, un, () => { window.close() });
     }
 
     init() {
