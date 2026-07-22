@@ -3818,6 +3818,8 @@ export class InputManager extends Manager {
         this.mouseGUIButtonElementInteract = null;
 
         this.previousInputs = new Map();
+        
+        this.lastTouchPos = null;
     }
 
     lockMouse() {
@@ -3825,18 +3827,27 @@ export class InputManager extends Manager {
     }
 
     unlockMouse() {
-        document.exitPointerLock();
+        if (document.pointerLockElement) {
+            document.exitPointerLock();
+        }
     }
 
     init() {
         const input = this.engine.input;
         const inputCanvas = this.engine.canvas;
 
-        window.addEventListener('click', () => {
-            if (THREE.AudioContext.getContext().state === 'suspended') {
-                THREE.AudioContext.getContext().resume();
+        const unlockAudio = () => {
+            if (typeof THREE !== 'undefined' && THREE.AudioContext) {
+                const ctx = THREE.AudioContext.getContext();
+                if (ctx && ctx.state === 'suspended') {
+                    ctx.resume();
+                }
             }
-        });
+            window.removeEventListener('click', unlockAudio);
+            window.removeEventListener('keydown', unlockAudio);
+        };
+        window.addEventListener('click', unlockAudio);
+        window.addEventListener('keydown', unlockAudio);
 
         window.addEventListener('keydown', (e) => {
             if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
@@ -3854,8 +3865,7 @@ export class InputManager extends Manager {
         });
 
         if (inputCanvas) {
-            // Helper pro výpočet pozice dotyku/myši na canvasu
-            const getCanvasPos = (clientX, clientY) => {
+            const getCanvasPos = (clientX, clientY, movementX = 0, movementY = 0) => {
                 const rect = inputCanvas.getBoundingClientRect();
                 const cssX = clientX - rect.left;
                 const cssY = clientY - rect.top;
@@ -3863,14 +3873,13 @@ export class InputManager extends Manager {
                 return {
                     x: cssX * (inputCanvas.width / rect.width),
                     y: cssY * (inputCanvas.height / rect.height),
-                    movementX: e.movementX,
-                    movementY: e.movementY
+                    movementX: movementX,
+                    movementY: movementY
                 };
             };
 
-            // --- MYŠ ---
             inputCanvas.addEventListener('mousemove', (e) => {
-                const pos = getCanvasPos(e.clientX, e.clientY);
+                const pos = getCanvasPos(e.clientX, e.clientY, e.movementX, e.movementY);
                 input.setInputState('Mouse_Position', pos);
                 this.mouseMoved.runAll(pos);
             });
@@ -3892,17 +3901,15 @@ export class InputManager extends Manager {
 
             inputCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-
-            // --- DOTYKOVÉ OVLÁDÁNÍ (TOUCH) ---
-
             inputCanvas.addEventListener('touchstart', (e) => {
-                e.preventDefault(); // Zabrání gestům prohlížeče a emulaci myši
+                e.preventDefault();
 
                 if (e.touches.length > 0) {
-                    const touch = e.touches[0]; // První dotyk
-                    const pos = getCanvasPos(touch.clientX, touch.clientY);
+                    const touch = e.touches[0];
+                    this.lastTouchPos = { x: touch.clientX, y: touch.clientY };
 
-                    // Aktualizujeme pozici a stiskneme levé tlačítko (0)
+                    const pos = getCanvasPos(touch.clientX, touch.clientY, 0, 0);
+
                     input.setInputState('Mouse_Position', pos);
                     this.mouseMoved.runAll(pos);
 
@@ -3917,29 +3924,34 @@ export class InputManager extends Manager {
 
                 if (e.touches.length > 0) {
                     const touch = e.touches[0];
-                    const pos = getCanvasPos(touch.clientX, touch.clientY);
+                    
+                    let movementX = 0;
+                    let movementY = 0;
+                    if (this.lastTouchPos) {
+                        movementX = touch.clientX - this.lastTouchPos.x;
+                        movementY = touch.clientY - this.lastTouchPos.y;
+                    }
+                    this.lastTouchPos = { x: touch.clientX, y: touch.clientY };
+
+                    const pos = getCanvasPos(touch.clientX, touch.clientY, movementX, movementY);
 
                     input.setInputState('Mouse_Position', pos);
                     this.mouseMoved.runAll(pos);
                 }
             }, { passive: false });
 
-            inputCanvas.addEventListener('touchend', (e) => {
+            const handleTouchEnd = (e) => {
                 e.preventDefault();
+                this.lastTouchPos = null;
 
-                // Pokud nezůstal žádný dotyk, uvolníme levé tlačítko
                 if (e.touches.length === 0) {
                     input.setInputState('Mouse_Button_0', false);
                     this.mouseButtonReleased.runAll(0);
                 }
-            }, { passive: false });
+            };
 
-            inputCanvas.addEventListener('touchcancel', (e) => {
-                e.preventDefault();
-
-                input.setInputState('Mouse_Button_0', false);
-                this.mouseButtonReleased.runAll(0);
-            }, { passive: false });
+            inputCanvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+            inputCanvas.addEventListener('touchcancel', handleTouchEnd, { passive: false });
         }
     }
 
@@ -3949,19 +3961,15 @@ export class InputManager extends Manager {
         const currentMouse0 = input.getInputState('Mouse_Button_0') || false;
         const previousMouse0 = this.previousInputs.get('Mouse_Button_0') || false;
 
-        if (currentMouse0 && !previousMouse0) {
-            input.setInputState('Mouse_Trigger_0', true);
-        } else {
-            input.setInputState('Mouse_Trigger_0', false);
-        }
+        input.setInputState('Mouse_Trigger_0', currentMouse0 && !previousMouse0);
 
-        for (const [key, currentValue] of input.inputs.entries()) {
+        const entries = input.inputs instanceof Map ? input.inputs.entries() : Object.entries(input.inputs);
+
+        for (const [key, currentValue] of entries) {
             const previousValue = this.previousInputs.get(key) || false;
 
-            if (key.startsWith('Mouse_Click_0')) {
-                if (currentValue === true && previousValue === false) {
-                    input.setInputState('Clicked0', true);
-                }
+            if (key.startsWith('Mouse_Click_0') && currentValue === true && previousValue === false) {
+                input.setInputState('Clicked0', true);
             }
 
             if (key === 'Mouse_Position' || key.startsWith('Mouse_Click_')) continue;
@@ -3977,7 +3985,7 @@ export class InputManager extends Manager {
 
         this.previousInputs.set('Mouse_Button_0', currentMouse0);
 
-        for (let [key, value] of input.inputs.entries()) {
+        for (const [key, value] of entries) {
             if (key.startsWith('Mouse_Click_') && value === true) {
                 input.setInputState(key, false);
             }
@@ -5471,14 +5479,14 @@ class Player {
 
             if (b1 && !this.b1state) {
                 this.b1state = b1;
-                this.placeBlock();
+                this.destroyBlock();
             } else {
                 this.b1state = b1;
             }
 
             if (b2 && !this.b2state) {
-                this.b2state = b2;
-                this.destroyBlock();
+                this.b2state = b2;                
+                this.placeBlock();
             } else {
                 this.b2state = b2;
             }
