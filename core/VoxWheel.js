@@ -2,7 +2,7 @@
 
 
 
-
+const build = 31;
 
 
 
@@ -2872,6 +2872,7 @@ export class MenuScreen extends Screen {
         this.splashText = this.addBitmapText(this.splashTextStr, centerX + 350, 250, -20, 5, 0xFFFF00, true, 1, true);
 
         this.addBitmapText("by Fraeric123", left - 225, down - 30, 0, 3);
+        this.addBitmapText("Alpha Test Build no." + build, 10, down - 60, 0, 3);
         this.addBitmapText("not Minecraft 1.0.0", 10, down - 30, 0, 3);
 
         const playBut = this.addButton("Play", centerX, centerY - 100, un, un, un, () => { engine.setScreen(engine.worldSelectScreen) });
@@ -3647,7 +3648,7 @@ export class InGameScreen extends Screen {
         const left = 2560;
         const right = 0;
 
-        this.addBitmapText("IN GAME", 100, 30, 0, 3, 0xFFFFFF, true, 1, true);
+        this.addBitmapText("Alpha Test Build no." + build, 185, 30, 0, 3, 0xFFFFFF, true, 1, true);        
         engine.input_manager.exitedPointerlock.addEvent(() => { engine.setExtraScreen(engine.gameMenuScreen) });
     }
 
