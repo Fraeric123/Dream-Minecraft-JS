@@ -2170,7 +2170,7 @@ export class GUIButtonElement extends GUIElement {
         this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
         this.mousePress = mbuttonDown;
 
-        if (this.mouseHover && this.state != this.disabled && (!this.engine.extraScreen || this.engine.extraScreen == this.screen)) {
+        if (this.mouseHover && this.state != this.disabled && (!this.engine.extraScreen || this.engine.extraScreen == this.screen) && !document.pointerLockElement) {
             if (this.mousePress) {
                 if (this.interactState == "hover" && mtriggerActive) {
                     this.interactState = "push";
@@ -2351,7 +2351,7 @@ export class GUISliderElement extends GUIElement {
         this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
         this.mousePress = mbuttonDown;
 
-        if (this.mouseHover && (!this.engine.extraScreen || this.engine.extraScreen == this.screen)) {
+        if (this.mouseHover && (!this.engine.extraScreen || this.engine.extraScreen == this.screen) && !document.pointerLockElement) {
             if (this.mousePress) {
                 if (this.interactState == "hover" && mtriggerActive) {
                     this.interactState = "push";
@@ -2560,7 +2560,7 @@ export class GUISwitchElement extends GUIElement {
         this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
         this.mousePress = mbuttonDown;
 
-        if (this.mouseHover && (!this.engine.extraScreen || this.engine.extraScreen == this.screen)) {
+        if (this.mouseHover && (!this.engine.extraScreen || this.engine.extraScreen == this.screen) && !document.pointerLockElement) {
             if (this.mousePress) {
                 if (this.interactState == "hover" && mtriggerActive) {
                     this.interactState = "push";
@@ -3165,33 +3165,33 @@ export class OptionsScreen extends Screen {
             (val) => { engine.config.data.BlurEffects = val }
         );
 
-        
-const fullScreenSwitch = this.addSwitch(
-    "FullScreen",
-    {
-        "ON": true,
-        "OFF": false
-    },
-    document.fullscreenElement !== null ? "ON" : "OFF",
-    centerX - 260, centerY + 80,
-    un, un, un,
-    (val) => { 
-        if (val) {
-            if (!document.fullscreenElement) {
-                this.engine.canvas.requestFullscreen().catch(err => {
-                    console.error(`fullscreen error: ${err.message}`);
-                });
-                screen.orientation.lock('landscape');
+
+        const fullScreenSwitch = this.addSwitch(
+            "FullScreen",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            document.fullscreenElement !== null ? "ON" : "OFF",
+            centerX - 260, centerY + 80,
+            un, un, un,
+            (val) => {
+                if (val) {
+                    if (!document.fullscreenElement) {
+                        this.engine.canvas.requestFullscreen().catch(err => {
+                            console.error(`fullscreen error: ${err.message}`);
+                        });
+                        screen.orientation.lock('landscape');
+                    }
+                } else {
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen().catch(err => {
+                            console.error(`exit fullscreen error: ${err.message}`);
+                        });
+                    }
+                }
             }
-        } else {
-            if (document.fullscreenElement) {
-                document.exitFullscreen().catch(err => {
-                    console.error(`exit fullscreen error: ${err.message}`);
-                });
-            }
-        } 
-    }
-);
+        );
 
         const doneBut2 = this.addButton("Done", centerX, centerY + 400, un, un, un, () => { this.turnPage(0) });
 
@@ -3649,13 +3649,38 @@ export class InGameScreen extends Screen {
 
         this.addBitmapText("IN GAME", 100, 30, 0, 3, 0xFFFFFF, true, 1, true);
 
-        const okBut = this.addButton("OK", centerX, down - 55, 160);
+        const okBut = this.addButton("OK", centerX, centerY, 160, un, un, () => { engine.setExtraScreen(engine.gameMenuScreen) });
 
-        okBut.onClick.addEvent(() => { engine.extraScreen = null });
+        engine.input_manager.exitedPointerlock.addEvent(() => { engine.setExtraScreen(engine.gameMenuScreen) });
     }
 
     render(ctx) {
         super.render(ctx);
+    }
+}
+
+
+export class GameMenuScreen extends Screen {
+    constructor(engine) {
+        super(engine);
+
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+        const down = 1440;
+        const up = 0;
+        const left = 2560;
+        const right = 0;
+
+        this.blur = this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Game Menu", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+
+        this.addButton("Back To Game", centerX, centerY - 200, 200, un, un, () => { engine.input_manager.lockMouse() });
+        this.addButton("Save and quit to title", centerX, centerY - 120, 200, un, un, () => { engine.closeWorld() });
+
+        engine.input_manager.enteredPointerlock.addEvent(() => { if (engine.extraScreen == this) { engine.extraScreen = null } });
     }
 }
 
@@ -3815,12 +3840,13 @@ export class InputManager extends Manager {
         this.mouseGUIButtonElementHover = new EventList();
         this.mouseGUIButtonElementUnHover = new EventList();
 
-        this.exitPointerlock = new EventList();
+        this.exitedPointerlock = new EventList();
+        this.enteredPointerlock = new EventList();
 
         this.mouseGUIButtonElementInteract = null;
 
         this.previousInputs = new Map();
-        
+
         this.lastTouchPos = null;
         this.pointerLockState = false;
     }
@@ -3927,7 +3953,7 @@ export class InputManager extends Manager {
 
                 if (e.touches.length > 0) {
                     const touch = e.touches[0];
-                    
+
                     let movementX = 0;
                     let movementY = 0;
                     if (this.lastTouchPos) {
@@ -3968,9 +3994,10 @@ export class InputManager extends Manager {
 
         if (!document.pointerLockElement && this.pointerLockState) {
             this.pointerLockState = false;
-            this.exitPointerlock.runAll();
-        } else {
-            this.pointerLockState = document.pointerLockElement;
+            this.exitedPointerlock.runAll();
+        } else if (document.pointerLockElement && !this.pointerLockState) {
+            this.pointerLockState = true;
+            this.enteredPointerlock.runAll();
         }
 
         const entries = input.inputs instanceof Map ? input.inputs.entries() : Object.entries(input.inputs);
@@ -4345,6 +4372,9 @@ class Cube {
         this.x = 0; this.y = 0; this.z = 0;
         this.xRot = 0; this.yRot = 0; this.zRot = 0;
 
+        this.geometry = null;
+        this.material = null;
+
         this.mesh = null;
         this.group = null;
     }
@@ -4438,20 +4468,20 @@ class Cube {
             vertexIndex += 4;
         }
 
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-        geometry.setIndex(indices);
-        geometry.computeVertexNormals();
+        this.geometry = new THREE.BufferGeometry();
+        this.geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        this.geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        this.geometry.setIndex(indices);
+        this.geometry.computeVertexNormals();
 
-        const material = new THREE.MeshBasicMaterial({
+        this.material = new THREE.MeshBasicMaterial({
             map: texture,
             side: THREE.FrontSide,
             transparent: true,
             alphaTest: 0.5
         });
 
-        this.mesh = new THREE.Mesh(geometry, material);
+        this.mesh = new THREE.Mesh(this.geometry, this.material);
         this.group.add(this.mesh);
 
         if (this.x !== 0 || this.y !== 0 || this.z !== 0) {
@@ -4466,6 +4496,11 @@ class Cube {
 
         this.group.rotation.order = 'ZYX';
         this.group.rotation.set(this.xRot, this.yRot, this.zRot);
+    }
+
+    destroy() {
+        this.geometry.dispose();
+        this.material.dispose();
     }
 }
 
@@ -4496,6 +4531,8 @@ class Entity {
         this.yRot = 0;
         this.xRot = 0;
 
+        this.removed = false;
+
         this.bb = null;
         this.onGround = false;
         this.heightOffset = 0;
@@ -4518,6 +4555,10 @@ class Entity {
         const w = 0.3;
         const h = 0.9;
         this.bb = new AABB(x - w, y - h, z - w, x + w, y + h, z + w);
+    }
+
+    remove() {
+        this.removed = true;
     }
 
     turn(xo, yo) {
@@ -4581,6 +4622,8 @@ class Entity {
         this.xd += xa * cos - za * sin;
         this.zd += za * cos + xa * sin;
     }
+
+    destroy() { }
 }
 
 class Zombie extends Entity {
@@ -4708,6 +4751,20 @@ class Zombie extends Entity {
         this.arm1.render();
         this.leg0.render();
         this.leg1.render();
+    }
+
+    destroy() {
+        this.head.destroy();
+        this.body.destroy();
+        this.arm0.destroy();
+        this.arm1.destroy();
+        this.leg0.destroy();
+        this.leg1.destroy();
+
+        if (this.group && this.group.parent) {
+            this.group.parent.remove(this.group);
+            this.group = null;
+        }
     }
 }
 
@@ -4989,6 +5046,12 @@ class Level {
             listener.tileChanged(x, y, z);
         }
     }
+
+    destroy() {
+        this.material.dispose();
+        this.selectionMaterial.dispose();
+        this.entities.forEach(e => e.destroy());
+    }
 }
 
 
@@ -5073,23 +5136,31 @@ class LevelRenderer {
         this.setDirty(0, 0, 0, this.level.width, this.level.depth, this.level.height);
     }
 
+    destroy() {
+        for (let chunk of this.chunks) {
+            if (chunk) chunk.destroy();
+        }
+        this.chunks = [];
+        this.t = null;
+    }
 }
 
 
 class Tesselator {
     constructor() {
-        this.MAX_VERTICES = 30000;
+        this.MAX_VERTICES = 300000;
 
         this.vertexArray = new Float32Array(this.MAX_VERTICES * 3);
         this.texCoordArray = new Float32Array(this.MAX_VERTICES * 2);
         this.colorArray = new Float32Array(this.MAX_VERTICES * 3);
 
         this.vertices = 0;
+
         this.u = 0;
         this.v = 0;
-        this.r = 0;
-        this.g = 0;
-        this.b = 0;
+        this.r = 1.0;
+        this.g = 1.0;
+        this.b = 1.0;
 
         this.hasColor = false;
         this.hasTexture = false;
@@ -5119,19 +5190,27 @@ class Tesselator {
     }
 
     vertex(x, y, z) {
-        this.vertexArray[this.vertices * 3 + 0] = x;
-        this.vertexArray[this.vertices * 3 + 1] = y;
-        this.vertexArray[this.vertices * 3 + 2] = z;
+        if (this.vertices >= this.MAX_VERTICES) {
+            console.warn("Tesselator is full!");
+            return;
+        }
+
+        const v3 = this.vertices * 3;
+        const v2 = this.vertices * 2;
+
+        this.vertexArray[v3 + 0] = x;
+        this.vertexArray[v3 + 1] = y;
+        this.vertexArray[v3 + 2] = z;
 
         if (this.hasTexture) {
-            this.texCoordArray[this.vertices * 2 + 0] = this.u;
-            this.texCoordArray[this.vertices * 2 + 1] = this.v;
+            this.texCoordArray[v2 + 0] = this.u;
+            this.texCoordArray[v2 + 1] = this.v;
         }
 
         if (this.hasColor) {
-            this.colorArray[this.vertices * 3 + 0] = this.r;
-            this.colorArray[this.vertices * 3 + 1] = this.g;
-            this.colorArray[this.vertices * 3 + 2] = this.b;
+            this.colorArray[v3 + 0] = this.r;
+            this.colorArray[v3 + 1] = this.g;
+            this.colorArray[v3 + 2] = this.b;
         }
 
         this.vertices++;
@@ -5141,7 +5220,6 @@ class Tesselator {
         if (this.vertices === 0) return null;
 
         const geometry = new THREE.BufferGeometry();
-
 
         geometry.setAttribute('position', new THREE.BufferAttribute(this.vertexArray.slice(0, this.vertices * 3), 3));
 
@@ -5155,7 +5233,6 @@ class Tesselator {
 
         geometry.computeBoundingSphere();
         geometry.computeBoundingBox();
-
         return geometry;
     }
 }
@@ -5299,6 +5376,7 @@ class Chunk {
 
     constructor(level, x0, y0, z0, x1, y1, z1) {
         this.level = level;
+        this.t = level.engine.t;
         this.x0 = x0;
         this.y0 = y0;
         this.z0 = z0;
@@ -5308,8 +5386,6 @@ class Chunk {
 
         this.aabb = new AABB(x0, y0, z0, x1, y1, z1);
         this.dirty = true;
-
-        this.t = new Tesselator();
 
         this.texture = level.texture;
         this.material = level.material;
@@ -5364,11 +5440,28 @@ class Chunk {
             this.rebuild(0);
             this.rebuild(1);
         }
+
         this.meshes[layer].visible = this.meshes[layer].geometry.attributes.position !== undefined;
     }
 
+
+
     setDirty() {
         this.dirty = true;
+    }
+
+    destroy() {
+        for (let i = 0; i < 2; i++) {
+            if (this.meshes[i]) {
+                if (this.meshes[i].geometry) {
+                    this.meshes[i].geometry.dispose();
+                }
+                if (this.meshes[i].parent) {
+                    this.meshes[i].parent.remove(this.meshes[i]);
+                }
+            }
+        }
+        this.meshes = [];
     }
 }
 
@@ -5472,7 +5565,7 @@ class Player {
             if (document.pointerLockElement) {
                 const sensitivity = (this.engine.config.data.Sensitivity || 100) / 100;
 
-                const factor = 0.015 * sensitivity;
+                const factor = 0.005 * sensitivity;
 
                 const invertY = this.engine.config.data.InvertMouse ? -1 : 1;
 
@@ -5495,7 +5588,7 @@ class Player {
             }
 
             if (b2 && !this.b2state) {
-                this.b2state = b2;                
+                this.b2state = b2;
                 this.placeBlock();
             } else {
                 this.b2state = b2;
@@ -5672,6 +5765,7 @@ export class VoxWheel {
 
         this.timer = new Timer(20.0);
 
+        this.t = new Tesselator();
         this.renderer = null;
         this.canvas = null;
         this.ctx = null;
@@ -5712,7 +5806,7 @@ export class VoxWheel {
         this.optionsScreen = new OptionsScreen(this);
         this.worldSelectScreen = new WorldSelectScreen(this);
         this.createWorldScreen = new CreateWorldScreen(this);
-
+        this.gameMenuScreen = new GameMenuScreen(this);
         this.inGameScreen = new InGameScreen(this);
     }
 
@@ -5730,7 +5824,49 @@ export class VoxWheel {
 
         this.config.data.RenderFactor = 1;
         this.input_manager.lockMouse();
-        this.setExtraScreen(this.inGameScreen);
+        this.setScreen(this.inGameScreen);
+    }
+
+    closeWorld() {
+        this.cleanScene();
+        this.levelRenderer.destroy();
+        this.level.destroy();
+        this.setRenderState(Enum.RenderState.Clear);
+        this.setScreen(this.menuScreen);
+        this.extraScreen = null;
+    }
+
+    cleanScene() {
+        const disposeMaterial = (material) => {
+            if (!material) return;
+
+            Object.keys(material).forEach((prop) => {
+                const value = material[prop];
+                if (value && typeof value === 'object' && value.isTexture) {
+                    value.dispose();
+                }
+            });
+
+            material.dispose();
+        };
+
+        this.scene.traverse((child) => {
+            if (child.geometry) {
+                child.geometry.dispose();
+            }
+
+            if (child.material) {
+                if (Array.isArray(child.material)) {
+                    child.material.forEach((mat) => disposeMaterial(mat));
+                } else {
+                    disposeMaterial(child.material);
+                }
+            }
+        });
+
+        while (this.scene.children.length > 0) {
+            this.scene.remove(this.scene.children[0]);
+        }
     }
 
     ms() {
