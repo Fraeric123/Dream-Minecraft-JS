@@ -3815,11 +3815,14 @@ export class InputManager extends Manager {
         this.mouseGUIButtonElementHover = new EventList();
         this.mouseGUIButtonElementUnHover = new EventList();
 
+        this.exitPointerlock = new EventList();
+
         this.mouseGUIButtonElementInteract = null;
 
         this.previousInputs = new Map();
         
         this.lastTouchPos = null;
+        this.pointerLockState = false;
     }
 
     lockMouse() {
@@ -3962,6 +3965,13 @@ export class InputManager extends Manager {
         const previousMouse0 = this.previousInputs.get('Mouse_Button_0') || false;
 
         input.setInputState('Mouse_Trigger_0', currentMouse0 && !previousMouse0);
+
+        if (!document.pointerLockElement && this.pointerLockState) {
+            this.pointerLockState = false;
+            this.exitPointerlock.runAll();
+        } else {
+            this.pointerLockState = document.pointerLockElement;
+        }
 
         const entries = input.inputs instanceof Map ? input.inputs.entries() : Object.entries(input.inputs);
 
