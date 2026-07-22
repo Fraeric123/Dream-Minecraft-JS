@@ -3347,7 +3347,7 @@ export class WorldSelectScreen extends Screen {
 
         this.playSelectedBut.onClick.addEvent(() => {
             engine.screen = null;
-            engine.startWorld(null);
+            engine.loadWorld(null);
         });
 
         this.deleteBut.onClick.addEvent(() => {
@@ -3648,9 +3648,6 @@ export class InGameScreen extends Screen {
         const right = 0;
 
         this.addBitmapText("IN GAME", 100, 30, 0, 3, 0xFFFFFF, true, 1, true);
-
-        const okBut = this.addButton("OK", centerX, centerY, 160, un, un, () => { engine.setExtraScreen(engine.gameMenuScreen) });
-
         engine.input_manager.exitedPointerlock.addEvent(() => { engine.setExtraScreen(engine.gameMenuScreen) });
     }
 
@@ -3675,12 +3672,93 @@ export class GameMenuScreen extends Screen {
 
         this.blur = this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
         this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
-        this.addBitmapText("Game Menu", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+        this.addBitmapText("Game Menu", centerX, centerY - 300, 0, 3, 0xFFFFFF, true, 1, true);
 
         this.addButton("Back To Game", centerX, centerY - 200, 200, un, un, () => { engine.input_manager.lockMouse() });
-        this.addButton("Save and quit to title", centerX, centerY - 120, 200, un, un, () => { engine.closeWorld() });
+        this.addButton("Save and quit to title", centerX, centerY + 100, 200, un, un, () => { engine.saveAndQuitWorld() });
 
         engine.input_manager.enteredPointerlock.addEvent(() => { if (engine.extraScreen == this) { engine.extraScreen = null } });
+    }
+
+    render(ctx) {
+        this.blur.visible = this.engine.config.data.BlurEffects;
+        super.render(ctx);
+    }
+}
+
+
+export class SaveWorldScreen extends Screen {
+    constructor(engine) {
+        super(engine);
+
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+        const down = 1440;        
+
+        this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Saving World...", centerX, centerY, 0, 3, 0xFFFFFF, true, 1, true);       
+    }
+
+    onSave(progress) {
+        this.engine.leaveWorld();
+    }
+
+    init() {
+        if (this.engine.renderState.state == Enum.RenderState.Clear) {
+            this.engine.setRenderState(Enum.RenderState.MenuBackground);
+
+            const p0 = this.engine.asset_manager.get("pano0"); const p3 = this.engine.asset_manager.get("pano3");
+            const p1 = this.engine.asset_manager.get("pano1"); const p4 = this.engine.asset_manager.get("pano4");
+            const p2 = this.engine.asset_manager.get("pano2"); const p5 = this.engine.asset_manager.get("pano5");
+
+            this.engine.setPanorama(p0, p1, p2, p3, p4, p5); this.engine.camera.position.set(0, 0, 0);
+        }
+    }
+
+    render(ctx) {
+        const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
+        const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
+        const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
+
+        this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
+
+        super.render(ctx);
+    }
+}
+
+
+export class GenerateWorldScreen extends Screen {
+    constructor(engine) {
+        super(engine);
+
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+        const down = 1440;        
+
+        this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Generate World", centerX, centerY, 0, 3, 0xFFFFFF, true, 1, true);       
+    }
+
+    onGenerate(progress) {
+        this.engine.enterWorld();
+    }
+
+    init() { }
+
+    render(ctx) {
+        const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
+        const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
+        const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
+
+        this.engine.camera.rotation.set(rotX, rotY, 0, 'YXZ');
+
+        super.render(ctx);
     }
 }
 
@@ -4060,7 +4138,7 @@ export class ConfigList {
             "FOV": 70,
             "Brightness": 0,
             "MenuSpinSpeed": 50,
-            "RenderFactor": 0.1,
+            "RenderFactor": 1,
 
             "InvertMouse": false,
             "SmoothLighting": true,
@@ -4780,6 +4858,8 @@ class Level {
     constructor(engine, w, h, d) {
         this.engine = engine;
 
+        this.uuid = crypto.randomUUID();
+
         this.width = w;
         this.height = h;
         this.depth = d;
@@ -4787,6 +4867,11 @@ class Level {
         this.camera = null;
         this.player = null;
         this.entities = [];
+
+        this.pause = false;
+
+        this.onGenerate = new EventList();
+        this.onSave = new EventList();
 
         this.texture = this.engine.asset_manager.get("terrain");
         this.texture.flipY = true;
@@ -4801,7 +4886,23 @@ class Level {
 
         this.blocks = new Uint8Array(w * h * d);
         this.lightDepths = new Int32Array(w * h);
-        this.levelListeners = [];
+        this.levelListeners = [];        
+    }
+
+    save() {
+        this.onSave.runAll({ "progress": 100 })
+    }
+
+    load(data) {
+        this.calcLightDepths(0, 0, w, h);
+
+        this.onGenerate.runAll();
+    }
+
+    generate() {
+        const w = this.width;
+        const d = this.depth;
+        const h = this.height;
 
         for (let x = 0; x < w; x++) {
             for (let y = 0; y < d; y++) {
@@ -4813,6 +4914,8 @@ class Level {
         }
 
         this.calcLightDepths(0, 0, w, h);
+
+        this.onGenerate.runAll({ "progress": 100 });
     }
 
     init() {
@@ -5048,8 +5151,10 @@ class Level {
     }
 
     destroy() {
+        this.onGenerate.clear();
         this.material.dispose();
         this.selectionMaterial.dispose();
+        this.player.destroy();
         this.entities.forEach(e => e.destroy());
     }
 }
@@ -5493,6 +5598,20 @@ class Player {
         this.b1state = false;
         this.b2state = false;
 
+        this.event = this.engine.input_manager.mouseMoved.addEvent((pos) => {
+            if (document.pointerLockElement) {
+
+                const sensitivity = (this.engine.config.data.Sensitivity || 100) / 100;
+                const factor = 1 * sensitivity;
+                const invertY = this.engine.config.data.InvertMouse ? -1 : 1;
+
+                this.turn(
+                    -pos.movementX * factor,
+                    pos.movementY * factor * invertY
+                );
+            }
+        });
+
         this.resetPos();
     }
 
@@ -5561,21 +5680,6 @@ class Player {
         let xa = 0;
         let za = 0;
 
-        this.engine.input_manager.mouseMoved.addEvent((pos) => {
-            if (document.pointerLockElement) {
-                const sensitivity = (this.engine.config.data.Sensitivity || 100) / 100;
-
-                const factor = 0.005 * sensitivity;
-
-                const invertY = this.engine.config.data.InvertMouse ? -1 : 1;
-
-                this.turn(
-                    -pos.movementX * factor,
-                    pos.movementY * factor * invertY
-                );
-            }
-        });
-
         if (document.pointerLockElement) {
             const b1 = this.input.getInputState(Enum.Controls.Button1);
             const b2 = this.input.getInputState(Enum.Controls.Button2);
@@ -5606,9 +5710,11 @@ class Player {
             }
 
             if (this.input.getInputState("KeyG")) {
-                const zomb = new Zombie(this.level, 0, 0, 0, this.level.engine.scene);
-                zomb.setPos(this.x, this.y, this.z);
-                this.level.entities.push(zomb);
+                for (let i = 0; i < 100; i++) {
+                    const zomb = new Zombie(this.level, 0, 0, 0, this.level.engine.scene);
+                    zomb.setPos(this.x, this.y, this.z);
+                    this.level.entities.push(zomb);
+                }
             }
         }
 
@@ -5689,6 +5795,10 @@ class Player {
 
         this.xd += (xa * dist) * cos - (za * dist) * sin;
         this.zd += (za * dist) * cos + (xa * dist) * sin;
+    }
+
+    destroy() {
+        this.engine.input_manager.mouseMoved.removeEvent(this.event);
     }
 }
 
@@ -5806,34 +5916,63 @@ export class VoxWheel {
         this.optionsScreen = new OptionsScreen(this);
         this.worldSelectScreen = new WorldSelectScreen(this);
         this.createWorldScreen = new CreateWorldScreen(this);
+        this.generateWorldScreen = new GenerateWorldScreen(this);
+        this.saveWorldScreen = new SaveWorldScreen(this);
         this.gameMenuScreen = new GameMenuScreen(this);
         this.inGameScreen = new InGameScreen(this);
     }
 
-    startWorld(worldzip) {
-        this.renderState.state = Enum.RenderState.InGame;
+    loadWorld(worldzip) {    
+        this.setScreen(this.generateWorldScreen);  
+        this.extraScreen = null;
+
         this.renderer.setClearColor(this.fogColor);
         this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 
-        this.scene.background = this.fogColor;
+        this.scene.background = this.fogColor;        
 
         this.level = new Level(this, 256, 256, 64);
-        this.levelRenderer = new LevelRenderer(this.level, this.scene);
+        this.levelRenderer = new LevelRenderer(this.level, this.scene);  
 
-        this.level.init();
+        this.level.onGenerate.addEvent((progress) => {
+            this.generateWorldScreen.onGenerate(progress);            
+        });
 
-        this.config.data.RenderFactor = 1;
-        this.input_manager.lockMouse();
-        this.setScreen(this.inGameScreen);
+        this.level.generate();        
     }
 
-    closeWorld() {
+    saveWorld() {
+        this.level.save();
+    }
+
+    saveAndQuitWorld() {
+        this.setScreen(this.saveWorldScreen);
+        this.extraScreen = null;
+
+        this.level.onSave.addEvent((progress) => {
+            this.saveWorldScreen.onSave(progress);            
+        });
+
+        this.level.save();
+
         this.cleanScene();
         this.levelRenderer.destroy();
         this.level.destroy();
+    }
+
+    leaveWorld() {
         this.setRenderState(Enum.RenderState.Clear);
         this.setScreen(this.menuScreen);
         this.extraScreen = null;
+    }   
+
+    enterWorld() {
+        this.renderState.state = Enum.RenderState.InGame;        
+        this.level.onGenerate.clear();        
+        this.level.init();
+        this.config.data.RenderFactor = 1;
+        this.input_manager.lockMouse();
+        this.setScreen(this.inGameScreen);
     }
 
     cleanScene() {
