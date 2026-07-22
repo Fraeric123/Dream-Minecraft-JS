@@ -2,7 +2,7 @@
 
 
 
-const build = 32;
+const build = 33;
 
 
 
@@ -331,17 +331,30 @@ export class EventList {
 
 export class Asset {
     constructor(id, path, type = Enum.AssetType.None) {
+        /*  
+                Audio   s_
+                HDR     h_
+                Model   m_
+                Texture t_        
+        */
+
         this.id = id;
-
         this.path = path;
-
         this.type = type;
-
         this.data = null;
-
         this.isLoaded = false;
-
         this.onLoad = new EventList();
+    }
+
+    getID() {
+        return this.id;
+    }
+
+    getCleanID() {
+        if (typeof this.id === 'string' && this.id[1] === '_') {
+            return this.id.slice(2);
+        }
+        return this.id;
     }
 }
 
@@ -730,7 +743,7 @@ export class AssetManager {
             throw error;
         }
 
-        //await sleep(50);
+        //await sleep(500);
     }
 
     async loadAll() {
@@ -2804,31 +2817,80 @@ export class AssetLoadingScreen extends Screen {
         const canvasH = 1440;
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
-        const down = 1440;
-        const up = 0;
-        const left = 2560;
-        const right = 0;
+
+        this.addColorPanel("black", 0, 0, canvasW, canvasH);
+
+        this.addBitmapText("Minecraft asset loading", 400, 15, 0, 16);
+        this.Pic = this.addTexturePanel("terrain", 900, 600, 300, 300);
+        this.Text = this.addBitmapText("", centerX, 320, 0, 5, 0xFFFFFF, un, un, true);
+
+        this.barWidth = 1000;
+        this.barHeight = 40;
+        this.barX = centerX - (this.barWidth / 2);
+        this.barY = 1200;
+        this.factor = 10;
+        this.padding = 10;
+
+        this.barBorder = this.addColorPanel(
+            "#ffffff",
+            this.barX - this.factor,
+            this.barY - this.factor,
+            this.barWidth + (this.factor * 2),
+            this.barHeight + (this.factor * 2)
+        );
+
+        this.barBg = this.addColorPanel(
+            "#000000",
+            this.barX,
+            this.barY,
+            this.barWidth,
+            this.barHeight
+        );
+
+        this.innerMaxWidth = this.barWidth - (this.padding * 2);
+        this.barFill = this.addColorPanel(
+            "#ffffff",
+            this.barX + this.padding,
+            this.barY + this.padding,
+            0,
+            this.barHeight - (this.padding * 2)
+        );
+
+        this.ProgressText = this.addBitmapText("0%", centerX, centerY + 440, 0, 5, 0xFFFFFF, un, un, true);
 
         this.engine.asset_manager.onProgress.addEvent((progress) => {
-            this.render(this.engine.ctx);
             this.assetLoaded(progress);
             this.render(this.engine.ctx);
         });
-
-        this.addColorPanel("black", 0, 0, 2560, 1440);
-        this.addBitmapText("Minecraft asset loading", 400, 15, 0, 16);
-        this.Pic = this.addTexturePanel("terrain", 900, 400, 900, 500);
-        this.Text = this.addBitmapText("", centerX, 320, 0, 5, 0x777777, un, un, true);
     }
 
     assetLoaded(progress) {
-        this.Text.text = `Loaded: ${progress.asset.path} (${Math.round(progress.value * 100)}%)`;
+        const path = progress.asset?.path ?? "";
+        const value = progress.value ?? 0;
 
-        if (progress.asset.type == Enum.AssetType.Texture) {
-            this.Pic.textureID = progress.asset.id;
+        this.Text.text = `Loaded: ${path}`;
+        this.ProgressText.text = `${Math.round(value * 100)}%`;
+
+        if (this.barFill) {
+            this.barFill.width = Math.floor(this.innerMaxWidth * value);
+        }
+
+        let img = null;
+        if (progress.asset.type === Enum.AssetType.Texture) {
+            this.Pic.textureID = progress.asset.getCleanID();
+            img = progress.asset.data?.image;
         } else {
             this.Pic.textureID = "pack";
+            img = this.engine.asset_manager.get("pack")?.image;
         }
+
+        if (img && img.height > 0) {
+            this.Pic.width = this.Pic.height * (img.width / img.height);
+        } else {
+            this.Pic.width = this.Pic.height;
+        }
+
+        this.Pic.x = 1280 - (this.Pic.width / 2);
     }
 }
 
@@ -2849,16 +2911,14 @@ export class LogoScreen extends Screen {
         this.addColorPanel("black", 0, 0, 2560, 1440);
         this.addBitmapText("Logo", centerX, 300, 0, 16, un, un, un, true);
         //this.Pic = this.addTexturePanel("font", -500, 500, 5000, 500);
-        this.Text = this.addBitmapText("num", centerX, 700, 0, 10, 0x777777, un, un, true);
 
         this.renderTime = 0;
     }
 
     render(ctx) {
         this.renderTime++;
-        this.Text.text = this.renderTime.toString();
 
-        if (this.renderTime > 20) {
+        if (this.renderTime > 1) {
             this.engine.setScreen(this.engine.menuScreen);
         }
 
@@ -3666,7 +3726,7 @@ export class InGameScreen extends Screen {
         const left = 2560;
         const right = 0;
 
-        this.addBitmapText("Alpha Test Build no." + build, 185, 30, 0, 3, 0xFFFFFF, true, 1, true);        
+        this.addBitmapText("Alpha Test Build no." + build, 185, 30, 0, 3, 0xFFFFFF, true, 1, true);
         engine.input_manager.exitedPointerlock.addEvent(() => { engine.setExtraScreen(engine.gameMenuScreen) });
     }
 
@@ -3714,11 +3774,11 @@ export class SaveWorldScreen extends Screen {
         const canvasH = 1440;
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
-        const down = 1440;        
+        const down = 1440;
 
         this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
         this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
-        this.addBitmapText("Saving World...", centerX, centerY, 0, 3, 0xFFFFFF, true, 1, true);       
+        this.addBitmapText("Saving World...", centerX, centerY, 0, 3, 0xFFFFFF, true, 1, true);
     }
 
     onSave(progress) {
@@ -3757,11 +3817,11 @@ export class GenerateWorldScreen extends Screen {
         const canvasH = 1440;
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
-        const down = 1440;        
+        const down = 1440;
 
         this.bg = this.addTiledTexturePanel("dirt", 0, 0, canvasW, canvasH, 6.8, 0, 1);
         this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
-        this.addBitmapText("Generate World", centerX, centerY, 0, 3, 0xFFFFFF, true, 1, true);       
+        this.addBitmapText("Generate World", centerX, centerY, 0, 3, 0xFFFFFF, true, 1, true);
     }
 
     onGenerate(progress) {
@@ -4905,7 +4965,7 @@ class Level {
 
         this.blocks = new Uint8Array(w * h * d);
         this.lightDepths = new Int32Array(w * h);
-        this.levelListeners = [];        
+        this.levelListeners = [];
     }
 
     save() {
@@ -5941,23 +6001,23 @@ export class VoxWheel {
         this.inGameScreen = new InGameScreen(this);
     }
 
-    loadWorld(worldzip) {    
-        this.setScreen(this.generateWorldScreen);  
+    loadWorld(worldzip) {
+        this.setScreen(this.generateWorldScreen);
         this.extraScreen = null;
 
         this.renderer.setClearColor(this.fogColor);
         this.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
 
-        this.scene.background = this.fogColor;        
+        this.scene.background = this.fogColor;
 
         this.level = new Level(this, 256, 256, 64);
-        this.levelRenderer = new LevelRenderer(this.level, this.scene);  
+        this.levelRenderer = new LevelRenderer(this.level, this.scene);
 
         this.level.onGenerate.addEvent((progress) => {
-            this.generateWorldScreen.onGenerate(progress);            
+            this.generateWorldScreen.onGenerate(progress);
         });
 
-        this.level.generate();        
+        this.level.generate();
     }
 
     saveWorld() {
@@ -5969,7 +6029,7 @@ export class VoxWheel {
         this.extraScreen = null;
 
         this.level.onSave.addEvent((progress) => {
-            this.saveWorldScreen.onSave(progress);            
+            this.saveWorldScreen.onSave(progress);
         });
 
         this.level.save();
@@ -5983,11 +6043,11 @@ export class VoxWheel {
         this.setRenderState(Enum.RenderState.Clear);
         this.setScreen(this.menuScreen);
         this.extraScreen = null;
-    }   
+    }
 
     enterWorld() {
-        this.renderState.state = Enum.RenderState.InGame;        
-        this.level.onGenerate.clear();        
+        this.renderState.state = Enum.RenderState.InGame;
+        this.level.onGenerate.clear();
         this.level.init();
         this.config.data.RenderFactor = 1;
         this.input_manager.lockMouse();
@@ -6207,6 +6267,7 @@ export class VoxWheel {
 
 const assets = new AssetList();
 
+assets.newAsset("pack", "../assets/textures/pack.png", Enum.AssetType.Texture);
 assets.newAsset("font", "../assets/fonts/default.gif", Enum.AssetType.Texture);
 assets.newAsset("terrain", "../assets/textures/terrain.png", Enum.AssetType.Texture);
 assets.newAsset("steve", "../assets/textures/char.png", Enum.AssetType.Texture);
@@ -6217,7 +6278,6 @@ assets.newAsset("pano3", "../assets/textures/pano/panorama3.png", Enum.AssetType
 assets.newAsset("pano4", "../assets/textures/pano/panorama4.png", Enum.AssetType.Texture);
 assets.newAsset("pano5", "../assets/textures/pano/panorama5.png", Enum.AssetType.Texture);
 assets.newAsset("logo", "../assets/textures/mclogo.png", Enum.AssetType.Texture);
-assets.newAsset("pack", "../assets/textures/pack.png", Enum.AssetType.Texture);
 assets.newAsset("gui", "../assets/textures/gui/gui.png", Enum.AssetType.Texture);
 assets.newAsset("icons", "../assets/textures/gui/icons.png", Enum.AssetType.Texture);
 assets.newAsset("dirt", "../assets/textures/dirt.png", Enum.AssetType.Texture);
