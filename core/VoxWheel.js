@@ -2,7 +2,7 @@
 
 
 
-const build = 35;
+const build = 36;
 
 
 
@@ -3421,8 +3421,12 @@ export class WorldSelectScreen extends Screen {
         this.deleteBut = this.addButton("Delete", centerX - 255 + 127, down - 55, 75);
         this.cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160);
 
-        this.createNewBut.onClick.addEvent(() => { engine.setScreen(engine.createWorldScreen); });
-        this.cancelBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen); });
+        this.playSelectedBut.state = this.playSelectedBut.disabled;
+        this.renameBut.state = this.renameBut.disabled;
+        this.deleteBut.state = this.deleteBut.disabled;
+
+        this.createNewBut.onClick.addEvent(() => { engine.setScreen(engine.createWorldScreen) });
+        this.cancelBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen) });
 
         this.playSelectedBut.onClick.addEvent(() => {
             engine.screen = null;
