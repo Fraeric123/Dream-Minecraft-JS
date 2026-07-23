@@ -6363,8 +6363,8 @@ export class Chunk {
         this.meshes = [new THREE.Mesh(), new THREE.Mesh()];
         this.meshes.forEach(m => {
             m.frustumCulled = true;
-            m.matrixAutoUpdate = false;
-            m.updateMatrix();
+            //m.matrixAutoUpdate = false;
+            //m.updateMatrix();
         });
     }
 
