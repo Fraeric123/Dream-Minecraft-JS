@@ -4776,7 +4776,7 @@ export class ConfigList {
             "Brightness": 0,
             "MenuSpinSpeed": 50,
             "RenderFactor": 1,
-            "BlurIntensity": 10,
+            "BlurIntensity": 5,
 
             "InvertMouse": false,
             "SmoothLighting": true,
@@ -6757,9 +6757,10 @@ export class VoxWheel {
         this.input_manager = new InputManager(this);
 
         this.listener = new THREE.AudioListener();
-        this.camera = new THREE.PerspectiveCamera(this.config.data.FOV, this.canvas_renderer.POM, 0.01, 1000.0);
+        // 0.1 25, 0.05 50, 0.025 100, 0.0125 200
+        this.camera = new THREE.PerspectiveCamera(this.config.data.FOV, this.canvas_renderer.POM, 0.025, 100.0);
         this.scene = new THREE.Scene();
-        //this.scene.fog = new THREE.FogExp2(this.fogColor, 0.008);
+        //this.scene.fog = new THREE.FogExp2(this.fogColor, 0.025);
 
         this.camera.add(this.listener);
         this.scene.add(this.camera);
