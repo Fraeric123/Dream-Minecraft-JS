@@ -40,7 +40,7 @@ export const zip = (worldFiles) => {
     log(jszip)
 }
 
-export const THREE = threeWebGPU;
+export const THREE = threeWebGL;
 
 
 
