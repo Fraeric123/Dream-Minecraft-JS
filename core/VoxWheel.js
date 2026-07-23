@@ -4414,7 +4414,7 @@ export class CanvasRenderer {
                 antialias: false,
                 alpha: false,
                 powerPreference: "high-performance",
-                precision: "mediump",
+                precision: 'highp', //precision: "mediump",
                 stencil: false,
                 depth: true
             });
