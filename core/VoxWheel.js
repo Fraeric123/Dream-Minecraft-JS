@@ -40,7 +40,7 @@ export const zip = (worldFiles) => {
     log(jszip)
 }
 
-export const THREE = threeWebGL;
+export const THREE = threeWebGPU;
 
 
 
@@ -4423,7 +4423,7 @@ export class CanvasRenderer {
         }
 
         this.engine.renderer.shadowMap.enabled = false;
-        
+
         this.engine.renderer.setPixelRatio(1);
         this.engine.renderer.setSize(this.VIRTUAL_WIDTH * this.RENDER_SCALE_FACTOR, this.VIRTUAL_HEIGHT * this.RENDER_SCALE_FACTOR, false);
         this.engine.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
