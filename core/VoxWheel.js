@@ -2,11 +2,12 @@
 
 
 
-const build = 36;
+const build = 37;
 
 
 
-import * as THREE from "../js/libs/three.module.min.js"
+import * as threeWebGPU from "../js/libs/three.webgpu.min.js"
+import * as threeWebGL from "../js/libs/three.module.min.js"
 import { GLTFLoader } from "../js/libs/GLTFLoader.js";
 import { RGBELoader } from "../js/libs/RGBELoader.js";
 import { clone } from "../js/libs/SkeletonUtils.js";
@@ -38,6 +39,8 @@ export const zip = (worldFiles) => {
     const jszip = new window.JSZip();
     log(jszip)
 }
+
+export const THREE = threeWebGL;
 
 
 
@@ -2031,6 +2034,7 @@ export class GUIBlurPanelElement extends GUIElement {
         this.blurPanel.h = this.height * this.scale;
         this.blurPanel.rotation = this.rotation;
         this.blurPanel.opacity = this.opacity;
+        this.blurPanel.intensity = this.intensity;
 
         this.blurPanel.x = 0;
         this.blurPanel.y = 0;
@@ -2143,6 +2147,8 @@ export class GUIButtonElement extends GUIElement {
         this.mouseHover = false;
         this.mousePress = false;
 
+        this.isDisabled = false;
+
         this.affectCursor = affectCursor;
 
         this.text = text;
@@ -2183,7 +2189,7 @@ export class GUIButtonElement extends GUIElement {
         this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
         this.mousePress = mbuttonDown;
 
-        if (this.mouseHover && this.state != this.disabled && (!this.engine.extraScreen || this.engine.extraScreen == this.screen) && !document.pointerLockElement) {
+        if (this.mouseHover && !this.isDisabled && (!this.engine.extraScreen || this.engine.extraScreen == this.screen) && !document.pointerLockElement) {
             if (this.mousePress) {
                 if (this.interactState == "hover" && mtriggerActive) {
                     this.interactState = "push";
@@ -2283,7 +2289,13 @@ export class GUIButtonElement extends GUIElement {
             }
         }
 
-        this.sprite.cords = this.state;
+        if (this.isDisabled) {
+            this.sprite.cords = [0, 46, 200, 20];
+        } else {
+            this.sprite.cords = this.state;
+        }
+
+
         this.sprite.w = this.width * this.scale;
         this.sprite.h = this.height * this.scale;
 
@@ -2820,16 +2832,16 @@ export class AssetLoadingScreen extends Screen {
 
         this.addColorPanel("black", 0, 0, canvasW, canvasH);
 
-        this.addBitmapText("Minecraft asset loading", 400, 15, 0, 16);
+        this.addBitmapText("Loading Assets...", centerX, 150, 0, 5, un, un, un, true);
         this.Pic = this.addTexturePanel("terrain", 900, 600, 300, 300);
         this.Text = this.addBitmapText("", centerX, 320, 0, 5, 0xFFFFFF, un, un, true);
 
         this.barWidth = 1000;
-        this.barHeight = 40;
+        this.barHeight = 30;
         this.barX = centerX - (this.barWidth / 2);
         this.barY = 1200;
-        this.factor = 10;
-        this.padding = 10;
+        this.factor = 5;
+        this.padding = 5;
 
         this.barBorder = this.addColorPanel(
             "#ffffff",
@@ -2934,7 +2946,7 @@ export class MenuScreen extends Screen {
         const canvasW = 2560;
         const canvasH = 1440;
         const centerX = canvasW / 2;
-        const centerY = (canvasH / 2)+100;
+        const centerY = (canvasH / 2) + 100;
         const down = 1440;
         const up = 0;
         const left = 2560;
@@ -2972,6 +2984,7 @@ export class MenuScreen extends Screen {
 
     render(ctx) {
         this.blur.visible = this.engine.config.data.BlurEffects;
+        this.blur.intensity = this.engine.config.data.BlurIntensity;
 
         const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
         const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
@@ -3066,7 +3079,7 @@ export class OptionsScreen extends Screen {
                 110: "FOV: Quake Pro"
             },
             "", "",
-            70, 110, 1,
+            30, 110, 1,
             this.engine.config.data.FOV,
             centerX - 260, centerY - 240,
             un, un, un,
@@ -3183,16 +3196,16 @@ export class OptionsScreen extends Screen {
             un, un, un,
             (val) => { engine.config.data.GUIScale = val }
         );
-        const advancedWebGL = this.addSwitch(
-            "Advanced WebGL",
+        const cloudsSwitch = this.addSwitch(
+            "Clouds",
             {
                 "ON": true,
                 "OFF": false
             },
-            engine.config.data.AdvancedWebGL ? "ON" : "OFF",
+            engine.config.data.Clouds ? "ON" : "OFF",
             centerX + 260, centerY - 160,
             un, un, un,
-            (val) => { engine.config.data.AdvancedWebGL = val }
+            (val) => { engine.config.data.Clouds = val }
         );
 
         const brightnessSlider = this.addSlider(
@@ -3208,16 +3221,15 @@ export class OptionsScreen extends Screen {
             un, un, un,
             (val) => { engine.config.data.Brightness = val }
         );
-        const cloudsSwitch = this.addSwitch(
-            "Clouds",
-            {
-                "ON": true,
-                "OFF": false
-            },
-            engine.config.data.Clouds ? "ON" : "OFF",
+        const blurIntensitySlider = this.addSlider(
+            "Blur Intensity",
+            {},
+            "", "",
+            0, 100, 1,
+            this.engine.config.data.BlurIntensity,
             centerX + 260, centerY - 80,
             un, un, un,
-            (val) => { engine.config.data.Clouds = val }
+            (val) => { engine.config.data.BlurIntensity = val }
         );
 
         const particlesSwitch = this.addSwitch(
@@ -3378,6 +3390,7 @@ export class OptionsScreen extends Screen {
 
     render(ctx) {
         this.blur.visible = this.engine.config.data.BlurEffects;
+        this.blur.intensity = this.engine.config.data.BlurIntensity;
 
         const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
         const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
@@ -3420,11 +3433,11 @@ export class WorldSelectScreen extends Screen {
         this.renameBut = this.addButton("Rename", centerX - 255 - 127, down - 55, 75);
         this.deleteBut = this.addButton("Delete", centerX - 255 + 127, down - 55, 75);
         this.cancelBut = this.addButton("Cancel", centerX + 255, down - 55, 160);
-
-        this.playSelectedBut.state = this.playSelectedBut.disabled;
-        this.renameBut.state = this.renameBut.disabled;
-        this.deleteBut.state = this.deleteBut.disabled;
-
+        /*
+                this.playSelectedBut.isDisabled = true;
+                this.renameBut.isDisabled = true;
+                this.deleteBut.isDisabled = true;
+        */
         this.createNewBut.onClick.addEvent(() => { engine.setScreen(engine.createWorldScreen) });
         this.cancelBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen) });
 
@@ -3565,6 +3578,7 @@ export class WorldSelectScreen extends Screen {
 
     render(ctx) {
         this.blur.visible = this.engine.config.data.BlurEffects;
+        this.blur.intensity = this.engine.config.data.BlurIntensity;
 
         const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
         const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
@@ -3714,6 +3728,8 @@ export class ErrorScreen extends Screen {
 
     render(ctx) {
         this.blur.visible = this.engine.config.data.BlurEffects;
+        this.blur.intensity = this.engine.config.data.BlurIntensity;
+
         this.title.text = this.errorText;
         super.render(ctx);
     }
@@ -3728,16 +3744,142 @@ export class InGameScreen extends Screen {
         const canvasH = 1440;
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
-        const down = 1440;
-        const up = 0;
-        const left = 2560;
-        const right = 0;
 
         this.addBitmapText("Alpha Test Build no." + build, 185, 30, 0, 3, 0xFFFFFF, true, 1, true);
-        engine.input_manager.exitedPointerlock.addEvent(() => { engine.setExtraScreen(engine.gameMenuScreen) });
+
+        const menuX = 20;
+        const menuY = 50;
+        const textRotation = 0;
+        const textSize = 3;
+        const textColor = 0xFFFFFF;
+        const textShadow = true;
+        const textOpacity = 1;
+        const isCentered = false;
+
+        let currentY = 30 + menuY;
+        const lineSpacing = 30;
+
+        const addDebugLine = (label) => {
+            const el = this.addBitmapText(label, menuX, currentY, textRotation, textSize, textColor, textShadow, textOpacity, isCentered);
+            currentY += lineSpacing;
+            return el;
+        };
+
+        this.debugFpsText = addDebugLine("FPS: 0");
+        this.debugCallsText = addDebugLine("Draw Calls: 0");
+        this.debugComputeText = addDebugLine("Compute Calls: 0");
+        this.debugTrianglesText = addDebugLine("Triangles: 0");
+        this.debugGeoText = addDebugLine("Geometries: 0");
+        this.debugMatText = addDebugLine("Materials: 0");
+        this.debugTexText = addDebugLine("Textures: 0");
+        this.debugObjectsText = addDebugLine("Scene Objects: 0 (Meshes: 0)");
+
+        currentY += 15;
+
+        this.debugEntitiesText = addDebugLine("Entities: 0");
+        this.debugPosText = addDebugLine("XYZ: 0.00 / 0.00 / 0.00");
+        this.debugChunkText = addDebugLine("Chunk: 0 0 0");
+        this.debugFacingText = addDebugLine("Facing: north");
+
+        this.lastFrameTime = performance.now();
+        this.frameCount = 0;
+        this.fpsUpdateInterval = 250;
+        this.lastFpsUpdate = performance.now();
+        this.currentFps = 0;
+
+        engine.input_manager.exitedPointerlock.addEvent(() => { engine.setExtraScreen(engine.gameMenuScreen); this.engine.level.pause = true; });
+    }
+
+    getUniqueMaterialsCount() {
+        if (!this.engine.scene) return 0;
+
+        const materials = new Set();
+        this.engine.scene.traverse((object) => {
+            if (object.isMesh && object.material) {
+                if (Array.isArray(object.material)) {
+                    object.material.forEach(m => materials.add(m.id));
+                } else {
+                    materials.add(object.material.id);
+                }
+            }
+        });
+        return materials.size;
+    }
+
+    getSceneObjectsCount() {
+        if (!this.engine.scene) return { total: 0, meshes: 0 };
+
+        let total = 0;
+        let meshes = 0;
+
+        this.engine.scene.traverse((object) => {
+            total++;
+            if (object.isMesh) meshes++;
+        });
+
+        return { total, meshes };
+    }
+
+    getPlayerFacing() {
+        if (!this.engine.camera) return "unknown";
+
+        const dir = new THREE.Vector3();
+        this.engine.camera.getWorldDirection(dir);
+
+        const angle = Math.atan2(dir.x, dir.z) * (180 / Math.PI);
+
+        if (angle >= -45 && angle < 45) return "south (+Z)";
+        if (angle >= 45 && angle < 135) return "west (-X)";
+        if (angle >= -135 && angle < -45) return "east (+X)";
+        return "north (-Z)";
     }
 
     render(ctx) {
+        const now = performance.now();
+        this.frameCount++;
+
+        if (now - this.lastFpsUpdate >= this.fpsUpdateInterval) {
+            this.currentFps = Math.round((this.frameCount * 1000) / (now - this.lastFpsUpdate));
+            this.frameCount = 0;
+            this.lastFpsUpdate = now;
+        }
+
+        if (this.engine.renderer && this.engine.renderer.info) {
+            const memory = this.engine.renderer.info.memory;
+            const renderStats = this.engine.renderer.info.render;
+            const computeStats = this.engine.renderer.info.compute;
+
+            const sceneStats = this.getSceneObjectsCount();
+
+            this.debugFpsText.text = `FPS: ${this.currentFps}`;
+            this.debugCallsText.text = `Draw Calls: ${renderStats?.calls ?? 0}`;
+            this.debugComputeText.text = `Compute Calls: ${computeStats?.calls ?? 0}`;
+            this.debugTrianglesText.text = `Triangles: ${(renderStats?.triangles ?? 0).toLocaleString()}`;
+            this.debugGeoText.text = `Geometries: ${memory?.geometries ?? 0}`;
+            this.debugMatText.text = `Materials: ${this.getUniqueMaterialsCount()}`;
+            this.debugTexText.text = `Textures: ${memory?.textures ?? 0}`;
+            this.debugObjectsText.text = `Scene Objects: ${sceneStats.total} (Meshes: ${sceneStats.meshes})`; // <- AKTUALIZACE TEXTU
+
+            const entitiesCount = this.engine.level?.entities?.length ?? 0;
+            this.debugEntitiesText.text = `Entities: ${entitiesCount}`;
+
+            const cam = this.engine.camera || this.engine.player?.camera;
+            if (cam) {
+                const px = cam.position.x;
+                const py = cam.position.y;
+                const pz = cam.position.z;
+
+                this.debugPosText.text = `XYZ: ${px.toFixed(2)} / ${py.toFixed(2)} / ${pz.toFixed(2)}`;
+
+                const cx = Math.floor(px / 16);
+                const cy = Math.floor(py / 16);
+                const cz = Math.floor(pz / 16);
+                this.debugChunkText.text = `Chunk: ${cx} ${cy} ${cz}`;
+
+                this.debugFacingText.text = `Facing: ${this.getPlayerFacing()}`;
+            }
+        }
+
         super.render(ctx);
     }
 }
@@ -3761,13 +3903,400 @@ export class GameMenuScreen extends Screen {
         this.addBitmapText("Game Menu", centerX, centerY - 300, 0, 3, 0xFFFFFF, true, 1, true);
 
         this.addButton("Back To Game", centerX, centerY - 200, 200, un, un, () => { engine.input_manager.lockMouse() });
+        this.addButton("Options", centerX,centerY + 20, 200, un, un, () => { engine.setExtraScreen(engine.inGameOptionsScreen) });
         this.addButton("Save and quit to title", centerX, centerY + 100, 200, un, un, () => { engine.saveAndQuitWorld() });
 
-        engine.input_manager.enteredPointerlock.addEvent(() => { if (engine.extraScreen == this) { engine.extraScreen = null } });
+        engine.input_manager.enteredPointerlock.addEvent(() => { if (engine.extraScreen == this) { engine.extraScreen = null; this.engine.level.pause = false; } });
     }
 
     render(ctx) {
-        this.blur.visible = this.engine.config.data.BlurEffects;
+        this.blur.visible = this.engine.config.data.BlurEffects;        
+        this.blur.intensity = this.engine.config.data.BlurIntensity;
+
+        super.render(ctx);
+    }
+}
+
+
+export class InGameOptionsScreen extends Screen {
+    constructor(engine) {
+        super(engine);
+
+        const canvasW = 2560;
+        const canvasH = 1440;
+        const centerX = canvasW / 2;
+        const centerY = canvasH / 2;
+        const down = 1440;
+        const up = 0;
+        const lefty = 2560;
+        const righty = 0;
+
+        this.blur1 = this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Options", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+
+        const musicVolumeSlider = this.addSlider(
+            "Music",
+            {
+                0: "Music: OFF"
+            },
+            "", "%",
+            0, 100, 1,
+            this.engine.config.data.Music,
+            centerX - 260, centerY - 400,
+            un, un, un,
+            (val) => { engine.config.data.Music = val }
+        );
+        const masterVolumeSlider = this.addSlider(
+            "Sound",
+            {
+                0: "Sound: OFF"
+            },
+            "", "%",
+            0, 100, 1,
+            this.engine.config.data.MasterVolume,
+            centerX + 260, centerY - 400,
+            un, un, un,
+            (val) => { engine.config.data.MasterVolume = val }
+        );
+
+        const invertMouseSwitch = this.addSwitch(
+            "Invert Mouse",
+            {
+                "ON": true, "OFF": false
+            },
+            engine.config.data.InvertMouse ? "ON" : "OFF",
+            centerX - 260, centerY - 320,
+            un, un, un,
+            (val) => { engine.config.data.InvertMouse = val }
+        );
+        const sensitivitySlider = this.addSlider(
+            "Sensitivity",
+            {
+                0: "Sensitivity: *yawn*",
+                200: "Sensitivity: HYPERSPEED!!!"
+            },
+            "", "%",
+            0, 200, 1,
+            this.engine.config.data.Sensitivity,
+            centerX + 260, centerY - 320,
+            un, un, un,
+            (val) => { engine.config.data.Sensitivity = val }
+        );
+
+        const fovSlider = this.addSlider(
+            "FOV",
+            {
+                70: "FOV: Normal",
+                110: "FOV: Quake Pro"
+            },
+            "", "",
+            30, 110, 1,
+            this.engine.config.data.FOV,
+            centerX - 260, centerY - 240,
+            un, un, un,
+            (val) => { engine.config.data.FOV = val }
+        );
+        const difficultySwitch = this.addSwitch(
+            "Difficulty",
+            {
+                "Peaceful": 0,
+                "Easy": 1,
+                "Normal": 2,
+                "Hard": 3
+            },
+            engine.config.getDifficulty(),
+            centerX + 260, centerY - 240,
+            un, un, un,
+            (val) => { engine.config.data.Difficulty = val }
+        );
+
+        const extrasBut = this.addButton("§6Extras", centerX, centerY + 120, un, un, un, () => { this.turnPage(3) });
+        const videoSettingsBut = this.addButton("Video Settings...", centerX, centerY + 200, un, un, un, () => { this.turnPage(1) });
+        const constrolsBut = this.addButton("Controls...", centerX, centerY + 280, un, un, un, () => { this.turnPage(2) });
+
+        const doneBut = this.addButton("Done", centerX, centerY + 400, un, un, un, () => { engine.extraScreen = engine.gameMenuScreen });
+
+        this.turnPage(1);
+
+        this.blur2 = this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Video Settings", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+
+        const graphicsSwitch = this.addSwitch(
+            "Graphics",
+            {
+                "Fancy": Enum.Graphics.Fancy,
+                "Fast": Enum.Graphics.Fast
+            },
+            engine.config.getGraphics(),
+            centerX - 260, centerY - 400,
+            un, un, un,
+            (val) => { engine.config.data.Graphics = val }
+        );
+        const renderDistanceSwitch = this.addSwitch(
+            "Render Distance",
+            {
+                "Far": Enum.RenderDistance.Far,
+                "Normal": Enum.RenderDistance.Normal,
+                "Short": Enum.RenderDistance.Short,
+                "Tiny": Enum.RenderDistance.Tiny
+            },
+            engine.config.getRenderDistance(),
+            centerX + 260, centerY - 400,
+            un, un, un,
+            (val) => { engine.config.data.RenderDistance = val }
+        );
+
+        const smoothLightingSwitch = this.addSwitch(
+            "Smooth Lighting",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data.SmoothLighting ? "ON" : "OFF",
+            centerX - 260, centerY - 320,
+            un, un, un,
+            (val) => { engine.config.data.SmoothLighting = val }
+        );
+        const performanceSwitch = this.addSwitch(
+            "Performance",
+            {
+                "Balanced": Enum.Performance.Balanced,
+                "MaxFPS": Enum.Performance.MaxFPS,
+                "PowerSaver": Enum.Performance.PowerSaver
+            },
+            engine.config.getPerformance(),
+            centerX + 260, centerY - 320,
+            un, un, un,
+            (val) => { engine.config.data.Performance = val }
+        );
+
+        const threeDAnaglyphSwitch = this.addSwitch(
+            "3D Anaglyph",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data["3DAnaglyph"] ? "ON" : "OFF",
+            centerX - 260, centerY - 240,
+            un, un, un,
+            (val) => { engine.config.data["3DAnaglyph"] = val }
+        );
+        const viewBobbingSwitch = this.addSwitch(
+            "View Bobbing",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data.ViewBobbing ? "ON" : "OFF",
+            centerX + 260, centerY - 240,
+            un, un, un,
+            (val) => { engine.config.data.ViewBobbing = val }
+        );
+
+        const guiScaleSwitch = this.addSwitch(
+            "GUI Scale",
+            {
+                "Auto": Enum.GUIScale.Auto,
+                "Large": Enum.GUIScale.Large,
+                "Normal": Enum.GUIScale.Normal,
+                "Small": Enum.GUIScale.Small
+            },
+            engine.config.getGUIScale(),
+            centerX - 260, centerY - 160,
+            un, un, un,
+            (val) => { engine.config.data.GUIScale = val }
+        );
+        const cloudsSwitch = this.addSwitch(
+            "Clouds",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data.Clouds ? "ON" : "OFF",
+            centerX + 260, centerY - 160,
+            un, un, un,
+            (val) => { engine.config.data.Clouds = val }
+        );
+
+        const brightnessSlider = this.addSlider(
+            "Brightness",
+            {
+                0: "Brightness: Moody",
+                100: "Brightness: Bright"
+            },
+            "+", "%",
+            0, 100, 1,
+            this.engine.config.data.Brightness,
+            centerX - 260, centerY - 80,
+            un, un, un,
+            (val) => { engine.config.data.Brightness = val }
+        );
+        const blurIntensitySlider = this.addSlider(
+            "Blur Intensity",
+            {},
+            "", "",
+            0, 100, 1,
+            this.engine.config.data.BlurIntensity,
+            centerX + 260, centerY - 80,
+            un, un, un,
+            (val) => { engine.config.data.BlurIntensity = val }
+        );
+        
+
+        const particlesSwitch = this.addSwitch(
+            "Particles",
+            {
+                "Minimal": Enum.Particles.Minimal,
+                "Decreased": Enum.Particles.Decreased,
+                "All": Enum.Particles.All
+            },
+            engine.config.getParticles(),
+            centerX - 260, centerY,
+            un, un, un,
+            (val) => { engine.config.data.Particles = val }
+        );
+        const blurEffectsSwitch = this.addSwitch(
+            "Blur Effects",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data.BlurEffects ? "ON" : "OFF",
+            centerX + 260, centerY,
+            un, un, un,
+            (val) => { engine.config.data.BlurEffects = val }
+        );
+
+
+        const fullScreenSwitch = this.addSwitch(
+            "FullScreen",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            document.fullscreenElement !== null ? "ON" : "OFF",
+            centerX - 260, centerY + 80,
+            un, un, un,
+            (val) => {
+                if (val) {
+                    if (!document.fullscreenElement) {
+                        this.engine.canvas.requestFullscreen().catch(err => {
+                            console.error(`fullscreen error: ${err.message}`);
+                        });
+                        screen.orientation.lock('landscape');
+                    }
+                } else {
+                    if (document.fullscreenElement) {
+                        document.exitFullscreen().catch(err => {
+                            console.error(`exit fullscreen error: ${err.message}`);
+                        });
+                    }
+                }
+            }
+        );
+
+        const doneBut2 = this.addButton("Done", centerX, centerY + 400, un, un, un, () => { this.turnPage(0) });
+
+        this.turnPage(2);
+
+        this.blur3 = this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Controls", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+
+        const attack = null
+        const useItem = null
+
+        const forward = null
+        const left = null
+
+        const back = null
+        const right = null
+
+        const jump = null
+        const sneak = null
+
+        const drop = null
+        const inventory = null
+
+        const chat = null
+        const listPlayers = null
+
+        const pickBlock = null
+
+        const doneBut3 = this.addButton("Done", centerX, centerY + 400, un, un, un, () => { this.turnPage(0) });
+
+        this.turnPage(3);
+
+        this.blur4 = this.addBlurPanel(10, 0, 0, canvasW, canvasH, 0);
+        this.addColorPanel("black", 0, 0, canvasW, canvasH, 0, 0.75);
+        this.addBitmapText("Extras", centerX, 90, 0, 3, 0xFFFFFF, true, 1, true);
+
+        const menuSpinSpeedSlider = this.addSlider(
+            "Menu Spin Speed",
+            {
+                "-10000": "Menu Spin Speed: LIGHTSPEED Backwards",
+                "-5000": "Menu Spin Speed: FAST AND FURIOUS Backwards",
+                "-2500": "Menu Spin Speed: Dizzy Backwards",
+                "-50": "Menu Spin Speed: Normal Backwards",
+                "0": "Menu Spin Speed: Motionless",
+                "50": "Menu Spin Speed: Normal",
+                "2500": "Menu Spin Speed: Dizzy",
+                "5000": "Menu Spin Speed: FAST AND FURIOUS",
+                "10000": "Menu Spin Speed: LIGHTSPEED"
+            },
+            "", "",
+            -10000, 10000, 50,
+            engine.config.data.MenuSpinSpeed,
+            centerX, centerY - 400,
+            250, un, un,
+            (vol) => { engine.config.data.MenuSpinSpeed = vol }
+        );
+
+        const extraSoundsSwitch = this.addSwitch(
+            "Extra Sounds",
+            {
+                "ON": true,
+                "OFF": false
+            },
+            engine.config.data.ExtraSounds ? "ON" : "OFF",
+            centerX, centerY - 300,
+            un, un, un,
+            (val) => { engine.config.data.ExtraSounds = val; }
+        );
+
+        const renderFactorSwitch = this.addSwitch(
+            "Render Factor",
+            {
+                "0.05x": 0.05,
+                "0.1x": 0.1,
+                "0.2x": 0.2,
+                "0.4x": 0.4,
+                "0.8x": 0.8,
+                "1x": 1,
+                "1.5x": 1.5,
+                "2x": 2
+            },
+            engine.config.data.RenderFactor + "x",
+            centerX, centerY - 200,
+            un, un, un,
+            (val) => { engine.config.data.RenderFactor = val }
+        );
+
+        const doneBut4 = this.addButton("Done", centerX, centerY + 400, un, un, un, () => { this.turnPage(0) });
+    }
+
+    render(ctx) {
+        this.blur1.visible = this.engine.config.data.BlurEffects;
+        this.blur1.intensity = this.engine.config.data.BlurIntensity;
+        this.blur2.visible = this.engine.config.data.BlurEffects;
+        this.blur2.intensity = this.engine.config.data.BlurIntensity;
+        this.blur3.visible = this.engine.config.data.BlurEffects;
+        this.blur3.intensity = this.engine.config.data.BlurIntensity;
+        this.blur4.visible = this.engine.config.data.BlurEffects;
+        this.blur4.intensity = this.engine.config.data.BlurIntensity;
+
         super.render(ctx);
     }
 }
@@ -3879,7 +4408,20 @@ export class CanvasRenderer {
         this.renderCanvas.width = this.VIRTUAL_WIDTH;
         this.renderCanvas.height = this.VIRTUAL_HEIGHT;
 
-        this.engine.renderer = new THREE.WebGLRenderer({ canvas: this.renderCanvas, antialias: false, alpha: false });
+        if (THREE == threeWebGL) {
+            this.engine.renderer = new THREE.WebGLRenderer({
+                canvas: this.renderCanvas,
+                antialias: false,
+                alpha: false,
+                powerPreference: "high-performance",
+                precision: "mediump",
+                stencil: false,
+                depth: true
+            });
+        } else {
+            this.engine.renderer = new THREE.WebGPURenderer({ canvas: this.renderCanvas, antialias: false, alpha: false });
+        }
+
         this.engine.renderer.setPixelRatio(1);
         this.engine.renderer.setSize(this.VIRTUAL_WIDTH * this.RENDER_SCALE_FACTOR, this.VIRTUAL_HEIGHT * this.RENDER_SCALE_FACTOR, false);
         this.engine.renderer.outputColorSpace = THREE.LinearSRGBColorSpace;
@@ -3928,7 +4470,14 @@ export class CanvasRenderer {
 
         this.ctx.imageSmoothingEnabled = false;
 
+        if (this.engine.config.data.FOV != this.engine.camera.fov) {
+            this.engine.camera.fov = this.engine.config.data.FOV;
+            this.engine.camera.updateProjectionMatrix();
+        }
+
         this.engine.renderer.render(this.engine.scene, this.engine.camera);
+
+        this.engine.renderer.sortObjects = false;
 
         this.ctx.clearRect(0, 0, this.VIRTUAL_WIDTH, this.VIRTUAL_HEIGHT);
         this.ctx.drawImage(this.renderCanvas, 0, 0, this.VIRTUAL_WIDTH, this.VIRTUAL_HEIGHT);
@@ -4225,12 +4774,12 @@ export class ConfigList {
             "Brightness": 0,
             "MenuSpinSpeed": 50,
             "RenderFactor": 1,
+            "BlurIntensity": 10,
 
             "InvertMouse": false,
             "SmoothLighting": true,
             "3DAnaglyph": false,
             "ViewBobbing": true,
-            "AdvancedWebGL": true,
             "Clouds": true,
             "BlurEffects": false,
             "ExtraSounds": false,
@@ -4322,7 +4871,7 @@ export class ConfigList {
 
 
 
-class Vec3 {
+export class Vec3 {
     constructor(x, y, z) {
         this.x = x;
         this.y = y;
@@ -4343,7 +4892,8 @@ class Vec3 {
     }
 }
 
-class AABB {
+
+export class AABB {
     constructor(x0, y0, z0, x1, y1, z1) {
         this.epsilon = 0.001;
         this.x0 = x0;
@@ -4377,6 +4927,10 @@ class AABB {
             this.x0 - xa, this.y0 - ya, this.z0 - za,
             this.x1 + xa, this.y1 + ya, this.z1 + za
         );
+    }
+
+    cloneMove(xa, ya, za) {
+        return new AABB(this.x0 + xa, this.y0 + ya, this.z0 + za, this.x1 + xa, this.y1 + ya, this.z1 + za);
     }
 
     clipXCollide(c, xa) {
@@ -4441,6 +4995,78 @@ class AABB {
 }
 
 
+export class JavaRandom {
+    static p2_16 = 0x10000;
+    static p2_24 = 0x1000000;
+    static p2_27 = 0x8000000;
+    static p2_31 = 0x80000000;
+    static p2_32 = 0x100000000;
+    static p2_48 = 0x1000000000000;
+    static p2_53 = Math.pow(2, 53);
+    static m2_16 = 0xffff;
+    static c2 = 0x0005;
+    static c1 = 0xdeec;
+    static c0 = 0xe66d;
+
+    constructor(seedval) {
+        this.s2 = 0; this.s1 = 0; this.s0 = 0;
+        this.nextNextGaussian = 0;
+        this.haveNextNextGaussian = false;
+
+        if (seedval === undefined) {
+            seedval = Math.floor(Math.random() * JavaRandom.p2_48);
+        }
+        this.setSeed(seedval);
+    }
+
+    _next() {
+        let carry = 0xb;
+        let r0 = (this.s0 * JavaRandom.c0) + carry;
+        carry = r0 >>> 16;
+        r0 &= JavaRandom.m2_16;
+        let r1 = (this.s1 * JavaRandom.c0 + this.s0 * JavaRandom.c1) + carry;
+        carry = r1 >>> 16;
+        r1 &= JavaRandom.m2_16;
+        let r2 = (this.s2 * JavaRandom.c0 + this.s1 * JavaRandom.c1 + this.s0 * JavaRandom.c2) + carry;
+        r2 &= JavaRandom.m2_16;
+
+        this.s2 = r2; this.s1 = r1; this.s0 = r0;
+        return (r2 << 16) | r1;
+    }
+
+    next(bits) { return this._next() >>> (32 - bits); }
+    next_signed(bits) { return this._next() >> (32 - bits); }
+
+    setSeed(n) {
+        let bSeed = (BigInt(n) ^ 0x5DEECE66Dn) & ((1n << 48n) - 1n);
+
+        this.s0 = Number(bSeed & 0xFFFFn);
+        this.s1 = Number((bSeed >> 16n) & 0xFFFFn);
+        this.s2 = Number((bSeed >> 32n) & 0xFFFFn);
+
+        this.haveNextNextGaussian = false;
+    }
+
+    nextInt(bound) {
+        if (bound === undefined) return this.next_signed(32);
+        if (bound <= 0) throw new RangeError("bound must be positive");
+
+        if ((bound & -bound) === bound) {
+            return Number((BigInt(bound) * BigInt(this.next(31))) >> 31n);
+        }
+
+        let bits, val;
+        do {
+            bits = this.next(31);
+            val = bits % bound;
+        } while (bits - val + (bound - 1) < 0);
+        return val;
+    }
+
+    nextBoolean() { return this.next(1) !== 0; }
+    nextFloat() { return this.next(24) / JavaRandom.p2_24; }
+    nextDouble() { return (JavaRandom.p2_27 * this.next(26) + this.next(27)) / JavaRandom.p2_53; }
+}
 
 
 
@@ -4448,7 +5074,9 @@ class AABB {
 
 
 
-class Vertex {
+
+
+export class Vertex {
     constructor(...args) {
         if (args.length === 5 &&
             typeof args[0] === 'number' &&
@@ -4483,13 +5111,10 @@ class Vertex {
     get x() { return this.pos.x; }
     get y() { return this.pos.y; }
     get z() { return this.pos.z; }
-
-    toString() {
-        return `Vertex(pos=${this.pos}, u=${this.u}, v=${this.v})`;
-    }
 }
 
-class Polygon {
+
+export class Polygon {
     constructor(vertices, u0 = null, v0 = null, u1 = null, v1 = null) {
         this.vertices = vertices.slice();
         this.vertexCount = vertices.length;
@@ -4516,16 +5141,10 @@ class Polygon {
 
         return { positions, uvs };
     }
-
-    debugPrint() {
-        for (let i = 3; i >= 0; i--) {
-            const v = this.vertices[i];
-            console.log(`  Vertex ${i}: (${v.x}, ${v.y}, ${v.z}), UV: (${v.u}, ${v.v})`);
-        }
-    }
 }
 
-class Cube {
+
+export class Cube {
     constructor(xTexOffs = 0, yTexOffs = 0) {
         this.xTexOffs = xTexOffs;
         this.yTexOffs = yTexOffs;
@@ -4675,8 +5294,7 @@ class Cube {
 
 
 
-
-class Entity {
+export class Entity {
     constructor(level) {
         this.level = level;
 
@@ -4688,36 +5306,55 @@ class Entity {
         this.y = 0;
         this.z = 0;
 
+        this.heightOffset = 0;
+
         this.xd = 0;
         this.yd = 0;
         this.zd = 0;
 
         this.yRot = 0;
         this.xRot = 0;
-
-        this.removed = false;
+        this.yRotO = 0;
+        this.xRotO = 0;
 
         this.bb = null;
         this.onGround = false;
-        this.heightOffset = 0;
+        this.horizontalCollision = false;
 
-        this.resetPos();
+        this.removed = false;
+
+        this.bbWidth = 0.6;
+        this.bbHeight = 1.8;
+
+        this.makeStepSound = true;
     }
 
     resetPos() {
-        const x = Math.random() * this.level.width;
-        const y = this.level.depth + 10;
-        const z = Math.random() * this.level.height;
-        this.setPos(x, y, z);
+        if (this.level == null) return;
+        let x = this.level.xSpawn + 0.5;
+        let y = this.level.ySpawn;
+        let z = this.level.zSpawn + 0.5;
+        while (y > 0) {
+            this.setPos(x, y, z);
+            if (this.level.getCubes(this.bb).length !== 0) {
+                y++;
+            } else {
+                break;
+            }
+        }
+        this.xd = 0;
+        this.yd = 0;
+        this.zd = 0;
+        this.yRot = this.level.rotSpawn || 0;
+        this.xRot = 0;
     }
 
     setPos(x, y, z) {
         this.x = x;
         this.y = y;
         this.z = z;
-
-        const w = 0.3;
-        const h = 0.9;
+        const w = this.bbWidth / 2.0;
+        const h = this.bbHeight / 2.0;
         this.bb = new AABB(x - w, y - h, z - w, x + w, y + h, z + w);
     }
 
@@ -4725,18 +5362,56 @@ class Entity {
         this.removed = true;
     }
 
-    turn(xo, yo) {
-        this.yRot += xo * 0.15;
-        this.xRot -= yo * 0.15;
+    setSize(w, h) {
+        this.bbWidth = w;
+        this.bbHeight = h;
+    }
 
-        if (this.xRot < -90) this.xRot = -90;
-        if (this.xRot > 90) this.xRot = 90;
+    turn(xo, yo) {
+        const prevXRot = this.xRot;
+        const prevYRot = this.yRot;
+        this.yRot = (this.yRot + xo * 0.15);
+        this.xRot = (this.xRot - yo * 0.15);
+        if (this.xRot < -90.0)
+            this.xRot = -90.0;
+        if (this.xRot > 90.0)
+            this.xRot = 90.0;
+        this.xRotO += this.xRot - prevXRot;
+        this.yRotO += this.yRot - prevYRot;
+    }
+
+    interpolateTurn(xo, yo) {
+        this.yRot = (this.yRot + xo * 0.15);
+        this.xRot = (this.xRot - yo * 0.15);
+        if (this.xRot < -90.0)
+            this.xRot = -90.0;
+        if (this.xRot > 90.0)
+            this.xRot = 90.0;
+    }
+
+    isFree(xa, ya, za) {
+        const box = this.bb.cloneMove(xa, ya, za);
+        const aABBs = this.level.getCubes(box);
+        if (aABBs.length > 0) return false;
+        if (this.level.containsAnyLiquid(box)) return false;
+
+        return true;
+    }
+
+    isInWater() {
+        return this.level.containsLiquid(this.bb.grow(0.0, -0.4, 0.0), 1);
+    }
+
+    isInLava() {
+        return this.level.containsLiquid(this.bb.grow(0.0, -0.4, 0.0), 2);
     }
 
     tick() {
         this.xo = this.x;
         this.yo = this.y;
         this.zo = this.z;
+        this.xRotO = this.xRot;
+        this.yRotO = this.yRot;
     }
 
     move(xa, ya, za) {
@@ -4761,7 +5436,8 @@ class Entity {
         }
         this.bb.move(0, 0, za);
 
-        this.onGround = (yaOrg !== ya && yaOrg < 0);
+        this.horizontalCollision = !(xaOrg == xa && zaOrg == za);
+        this.onGround = (yaOrg !== ya && yaOrg < 0.0);
 
         if (xaOrg !== xa) this.xd = 0;
         if (yaOrg !== ya) this.yd = 0;
@@ -4774,43 +5450,70 @@ class Entity {
 
     moveRelative(xa, za, speed) {
         let dist = xa * xa + za * za;
-        if (dist < 0.01) return;
-
-        dist = speed / Math.sqrt(dist);
+        if (dist < 0.01)
+            return;
+        dist = Math.sqrt(dist);
+        if (dist < 1.0) dist = 1.0;
+        dist = speed / dist;
         xa *= dist;
         za *= dist;
 
-        const sin = Math.sin(this.yRot * Math.PI / 180);
-        const cos = Math.cos(this.yRot * Math.PI / 180);
-
-        this.xd += xa * cos - za * sin;
-        this.zd += za * cos + xa * sin;
+        let sin = Math.sin(this.yRot * Math.PI / 180);
+        let cos = Math.cos(this.yRot * Math.PI / 180);
+        this.xd += xa * cos + za * sin;
+        this.zd += -xa * sin + za * cos;
     }
 
-    destroy() { }
+    isLit(isHumanoid = false) {
+        const xTile = Math.floor(this.x);
+        const yTile = Math.floor(this.y);
+        const zTile = Math.floor(this.z);
+        if (isHumanoid) {
+            return (this.level.isLit(xTile, yTile, zTile) || this.level.isLit(xTile, yTile + 1, zTile));
+        } else {
+            return (this.level.isLit(xTile, yTile, zTile));
+        }
+    }
+
+    getBrightness() {
+        const xTile = Math.floor(this.x);
+        const yTile = Math.floor(this.y + this.heightOffset / 2);
+        const zTile = Math.floor(this.z);
+        return this.level.getBrightness(xTile, yTile, zTile);
+    }
+
+    moveTo(x, y, z, yRot, xRot) {
+        this.xo = this.x = x;
+        this.yo = this.y = y;
+        this.zo = this.z = z;
+        this.yRot = yRot;
+        this.xRot = xRot;
+        this.setPos(x, y, z);
+    }
+
+    distanceTo(other) {
+        const dx = this.x - other.x;
+        const dy = this.y - other.y;
+        const dz = this.z - other.z;
+        return Math.sqrt(dx * dx + dy * dy + dz * dz);
+    }
+
+    setLevel(level) {
+        this.level = level;
+    }
 }
 
-class Zombie extends Entity {
-    constructor(level, x, y, z, scene) {
-        super(level);
 
-        if (!scene) throw new Error("Zombie: scene is required");
+export class ZombieModel {
+    constructor(level, scene, texture) {
+        this.level = level;
+        this.scene = scene;
 
-        this.texture = this.level.engine.asset_manager.get("steve");
-
-        this.texture.magFilter = THREE.NearestFilter;
-        this.texture.minFilter = THREE.NearestFilter;
-        this.texture.generateMipmaps = false;
-        this.texture.flipY = true;
-
-        this.rotA = (Math.random() + 1) * 0.01;
-        this.x = x; this.y = y; this.z = z;
-        this.timeOffs = Math.random() * 1239813;
-        this.rot = Math.random() * Math.PI * 2;
-        this.speed = 1.0;
+        this.texture = texture;
 
         this.group = new THREE.Group();
-        scene.add(this.group);
+
+        this.scene.add(this.group);
 
         this.head = new Cube(0, 0);
         this.head.addBox(-4, -8, -4, 8, 8, 8);
@@ -4842,6 +5545,68 @@ class Zombie extends Entity {
         this.leg1.createMesh(this.texture, this.group);
     }
 
+    render(time) {
+        this.head.yRot = Math.sin(time * 0.83) * 1.0;
+        this.head.xRot = Math.sin(time) * 0.8;
+        this.arm0.xRot = Math.sin(time * 0.6662 + Math.PI) * 2.0;
+        this.arm0.zRot = (Math.sin(time * 0.2312) + 1.0) * 1.0;
+        this.arm1.xRot = Math.sin(time * 0.6662) * 2.0;
+        this.arm1.zRot = (Math.sin(time * 0.2812) - 1.0) * 1.0;
+        this.leg0.xRot = Math.sin(time * 0.6662) * 1.4;
+        this.leg1.xRot = Math.sin(time * 0.6662 + Math.PI) * 1.4;
+
+        this.head.render();
+        this.body.render();
+        this.arm0.render();
+        this.arm1.render();
+        this.leg0.render();
+        this.leg1.render();
+    }
+
+    destroy() {
+        this.head.destroy();
+        this.body.destroy();
+        this.arm0.destroy();
+        this.arm1.destroy();
+        this.leg0.destroy();
+        this.leg1.destroy();
+
+        if (this.group && this.group.parent) {
+            this.group.parent.remove(this.group);
+        }
+    }
+}
+
+
+export class Zombie extends Entity {
+    constructor(level, x, y, z, scene) {
+        super(level);
+
+        this.x = x;
+        this.y = y;
+        this.z = z;
+
+        super.setPos(x, y, z);
+
+        this.rotA = (Math.random() + 1) * 0.01;
+
+        this.timeOffs = Math.random() * 1239813;
+        this.rot = Math.random() * Math.PI * 2;
+        this.speed = 1.0;
+
+        this.currentBrightness = 0.1;
+
+        this.texture = this.level.engine.asset_manager.get("steve");
+
+        this.texture.magFilter = THREE.NearestFilter;
+        this.texture.minFilter = THREE.NearestFilter;
+        this.texture.generateMipmaps = false;
+        this.texture.flipY = true;
+
+        this.model = new ZombieModel(level, scene, this.texture);
+        this.group = this.model.group;
+    }
+
     tick() {
         this.xo = this.x;
         this.yo = this.y;
@@ -4871,19 +5636,29 @@ class Zombie extends Entity {
 
         this.move(this.xd, this.yd, this.zd);
 
-        const groundFriction = this.onGround ? 0.546 : 0.91;
+        const groundFriction = (this.onGround ? 0.546 : 0.91) * this.speed;
 
         this.xd *= groundFriction;
         this.zd *= groundFriction;
         this.yd *= 0.98;
 
-        if (this.y > 100) {
-            this.resetPos();
-        }
+        if (this.y < -100.0) super.remove();
     }
 
     render(a) {
         const time = (performance.now() / 1000) * 10 * this.speed + this.timeOffs;
+
+        let brightness = super.isLit(true) ? 1.0 : 0.3;
+
+        if (brightness != this.currentBrightness) {
+            this.currentBrightness = brightness;
+
+            this.group.traverse((child) => {
+                if (child.isMesh) {
+                    child.material.color.setRGB(this.currentBrightness, this.currentBrightness, this.currentBrightness);
+                }
+            });
+        }
 
         const x = this.xo + (this.x - this.xo) * a;
         const y = this.yo + (this.y - this.yo) * a;
@@ -4900,35 +5675,11 @@ class Zombie extends Entity {
 
         this.group.rotation.y = this.rot + Math.PI;
 
-        this.head.yRot = Math.sin(time * 0.83) * 1.0;
-        this.head.xRot = Math.sin(time) * 0.8;
-        this.arm0.xRot = Math.sin(time * 0.6662 + Math.PI) * 2.0;
-        this.arm0.zRot = (Math.sin(time * 0.2312) + 1.0) * 1.0;
-        this.arm1.xRot = Math.sin(time * 0.6662) * 2.0;
-        this.arm1.zRot = (Math.sin(time * 0.2812) - 1.0) * 1.0;
-        this.leg0.xRot = Math.sin(time * 0.6662) * 1.4;
-        this.leg1.xRot = Math.sin(time * 0.6662 + Math.PI) * 1.4;
-
-        this.head.render();
-        this.body.render();
-        this.arm0.render();
-        this.arm1.render();
-        this.leg0.render();
-        this.leg1.render();
+        this.model.render(time);
     }
 
     destroy() {
-        this.head.destroy();
-        this.body.destroy();
-        this.arm0.destroy();
-        this.arm1.destroy();
-        this.leg0.destroy();
-        this.leg1.destroy();
-
-        if (this.group && this.group.parent) {
-            this.group.parent.remove(this.group);
-            this.group = null;
-        }
+        this.model.destroy();
     }
 }
 
@@ -4940,7 +5691,7 @@ class Zombie extends Entity {
 
 
 
-class Level {
+export class Level {
     constructor(engine, w, h, d) {
         this.engine = engine;
 
@@ -4949,6 +5700,14 @@ class Level {
         this.width = w;
         this.height = h;
         this.depth = d;
+
+        this.xSpawn = 0;
+        this.ySpawn = 0;
+        this.zSpawn = 0;
+        this.rotSpawn = 0;
+
+        this.random = new JavaRandom(this.seed);
+        this.randValue = this.random.nextInt();
 
         this.camera = null;
         this.player = null;
@@ -5022,6 +5781,7 @@ class Level {
             this.selectionMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), this.selectionMaterial);
             this.selectionMesh.visible = false;
             this.selectionMesh.renderOrder = 999;
+            this.engine.scene.add(this.selectionMesh);
         }
 
         this.player = new Player(this);
@@ -5032,12 +5792,27 @@ class Level {
     }
 
     tick() {
+        if (this.pause) return;
+
         this.player.tick(this.engine.camera);
 
-        this.entities.forEach(z => z.tick());
+        for (let i = this.entities.length - 1; i >= 0; i--) {
+            const e = this.entities[i];
+            e.tick();
+            if (e.removed) {
+                if (typeof e.destroy === 'function') {
+                    e.destroy();
+                } else if (e.group) {
+                    this.scene.remove(e.group);
+                }
+                this.entities.splice(i, 1);
+            }
+        }
     }
 
     render() {
+        if (this.pause) return;
+
         this.moveCameraToPlayer();
         const hit = this.pick(5.0);
         if (hit) {
@@ -5057,9 +5832,7 @@ class Level {
             this.selectionMaterial.opacity = 0.2 + Math.sin(performance.now() * 0.01) * 0.1;
         } else {
             this.selectionMesh.visible = false;
-        }
-
-        this.engine.scene.add(this.selectionMesh);
+        }        
 
         this.engine.levelRenderer.render(this.player, 0);
         this.engine.levelRenderer.render(this.player, 1);
@@ -5184,6 +5957,12 @@ class Level {
         return this.isSolidTile(x, y, z);
     }
 
+    isLit(x, y, z) {
+        if (x >= 0 && y >= 0 && z >= 0 && x < this.width && y < this.depth && z < this.height)
+            return (y >= this.lightDepths[x + z * this.width]);
+        return true;
+    }
+
     getCubes(aabb) {
         const aabbs = [];
         let x0 = Math.floor(aabb.x0);
@@ -5246,7 +6025,7 @@ class Level {
 }
 
 
-class LevelRenderer {
+export class LevelRenderer {
     constructor(level, scene) {
         this.CHUNK_SIZE = 16;
         this.level = level;
@@ -5337,7 +6116,7 @@ class LevelRenderer {
 }
 
 
-class Tesselator {
+export class Tesselator {
     constructor() {
         this.MAX_VERTICES = 300000;
 
@@ -5436,7 +6215,7 @@ class Tesselator {
 
 
 
-class Tile {
+export class Tile {
     static grass = new Tile(0);
     static rock = new Tile(1);
 
@@ -5561,7 +6340,7 @@ class Tile {
 
 
 
-class Chunk {
+export class Chunk {
     static rebuiltThisFrame = 0;
     static updates = 0;
 
@@ -5582,7 +6361,11 @@ class Chunk {
         this.material = level.material;
 
         this.meshes = [new THREE.Mesh(), new THREE.Mesh()];
-        this.meshes.forEach(m => m.frustumCulled = true);
+        this.meshes.forEach(m => {
+            m.frustumCulled = true;
+            m.matrixAutoUpdate = false;
+            m.updateMatrix();
+        });
     }
 
     rebuild(layer) {
@@ -5594,11 +6377,12 @@ class Chunk {
 
         this.t.init();
 
+        const grassLevel = (this.level.depth * 2) / 3;
+
         for (let x = this.x0; x < this.x1; x++) {
             for (let y = this.y0; y < this.y1; y++) {
                 for (let z = this.z0; z < this.z1; z++) {
                     if (this.level.isTile(x, y, z)) {
-                        const grassLevel = this.level.depth * 2 / 3
                         const isGrass = (y < grassLevel && y > grassLevel - 1);
                         if (isGrass) {
                             Tile.grass.render(this.t, this.level, layer, x, y, z);
@@ -5617,6 +6401,9 @@ class Chunk {
         }
 
         if (newGeometry) {
+            newGeometry.computeBoundingBox();
+            newGeometry.computeBoundingSphere();
+
             this.meshes[layer].geometry = newGeometry;
             this.meshes[layer].material = this.material;
             this.meshes[layer].visible = true;
@@ -5632,10 +6419,9 @@ class Chunk {
             this.rebuild(1);
         }
 
-        this.meshes[layer].visible = this.meshes[layer].geometry.attributes.position !== undefined;
+        const hasPositions = !!this.meshes[layer]?.geometry?.attributes?.position;
+        this.meshes[layer].visible = hasPositions;
     }
-
-
 
     setDirty() {
         this.dirty = true;
@@ -5664,7 +6450,7 @@ class Chunk {
 
 
 
-class Player {
+export class Player {
     constructor(level) {
         this.level = level;
         this.engine = this.level.engine;
@@ -5706,7 +6492,6 @@ class Player {
     }
 
     placeBlock() {
-        log("place")
         const hit = this.getSelectedPos();
         if (!hit) return;
 
@@ -5730,7 +6515,6 @@ class Player {
     }
 
     destroyBlock() {
-        log("destroy")
         const hit = this.getSelectedPos();
         if (!hit) return;
         this.level.setTile(hit.x, hit.y, hit.z, 0);
@@ -5796,11 +6580,9 @@ class Player {
             }
 
             if (this.input.getInputState("KeyG")) {
-                for (let i = 0; i < 100; i++) {
-                    const zomb = new Zombie(this.level, 0, 0, 0, this.level.engine.scene);
-                    zomb.setPos(this.x, this.y, this.z);
-                    this.level.entities.push(zomb);
-                }
+                const zomb = new Zombie(this.level, 0, 0, 0, this.level.engine.scene);
+                zomb.setPos(this.x, this.y, this.z);
+                this.level.entities.push(zomb);
             }
         }
 
@@ -5896,7 +6678,7 @@ class Player {
 
 
 
-class Timer {
+export class Timer {
     constructor(ticksPerSecond) {
         this.ticksPerSecond = ticksPerSecond;
         this.lastTime = performance.now();
@@ -5948,7 +6730,7 @@ export class VoxWheel {
 
         this.assets = assets;
 
-        this.asset_manager = new AssetManager(this)
+        this.asset_manager = new AssetManager(this);
 
         this.fogColor = new THREE.Color(0.5, 0.8, 1.0);
         this.skyFogColor = new THREE.Color(0.5, 0.8, 1.0);
@@ -5973,7 +6755,7 @@ export class VoxWheel {
         this.input_manager = new InputManager(this);
 
         this.listener = new THREE.AudioListener();
-        this.camera = new THREE.PerspectiveCamera(70, this.canvas_renderer.POM, 0.01, 1000.0);
+        this.camera = new THREE.PerspectiveCamera(this.config.data.FOV, this.canvas_renderer.POM, 0.01, 1000.0);
         this.scene = new THREE.Scene();
         //this.scene.fog = new THREE.FogExp2(this.fogColor, 0.008);
 
@@ -6006,6 +6788,7 @@ export class VoxWheel {
         this.saveWorldScreen = new SaveWorldScreen(this);
         this.gameMenuScreen = new GameMenuScreen(this);
         this.inGameScreen = new InGameScreen(this);
+        this.inGameOptionsScreen = new InGameOptionsScreen(this);
     }
 
     loadWorld(worldzip) {
@@ -6217,7 +7000,11 @@ export class VoxWheel {
     }
 
     async init() {
-        console.log("initializing..")
+        console.log("initializing..");
+
+        if (typeof this.renderer.init === 'function') {
+            await this.renderer.init();
+        }
 
         this.setScreen(this.assetLoadingScreen);
 
