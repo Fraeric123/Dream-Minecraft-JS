@@ -6600,7 +6600,7 @@ export class LevelRenderer {
         this.scene = scene;
         this.t = level.engine.t;
 
-        this.drawDistance = 0;
+        this.renderDistanceChunks = 8;
 
         this.frustum = new Frustum();
 
@@ -6659,8 +6659,8 @@ export class LevelRenderer {
             });
         }
 
-        const dd = 256 >> this.drawDistance;
-        const maxDistanceSqr = dd * dd;
+        const maxDistanceBlocks = this.renderDistanceChunks * this.CHUNK_SIZE;
+        const maxDistanceSqr = maxDistanceBlocks * maxDistanceBlocks;
 
         const frustum = this.frustum;
         const hasFrustum = !!frustum;
