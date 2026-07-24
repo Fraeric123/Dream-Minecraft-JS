@@ -2,7 +2,7 @@
 
 
 
-const build = 37;
+const build = 38;
 
 
 
@@ -37,7 +37,6 @@ export const isPointInBox = (px, py, bx, by, bw, bh) => {
 
 export const zip = (worldFiles) => {
     const jszip = new window.JSZip();
-    log(jszip)
 }
 
 export const THREE = threeWebGL;
@@ -1676,6 +1675,49 @@ export class GUIBitmapText extends GUIDrawCommand {
 
 
 
+export class ScrollListObjectList {
+    constructor(objects = []) {
+        this.objects = objects;
+        this.selectedObject = null;
+    }
+
+    addScrollListObject(object) {
+        this.objects.push(object);
+    }
+
+    removeScrollListObject(object) {
+        const index = this.objects.indexOf(object);
+        if (index !== -1) {
+            this.objects.splice(index, 1);
+        }
+
+        if (this.selectedObject === object) {
+            this.selectedObject = null;
+        }
+    }
+
+    selectObject(object) {
+        this.selectedObject = object;
+    }
+
+    removeSelectedObject() {
+        this.removeScrollListObject(this.selectedObject);
+    }
+
+    getSelectedObject() {
+        return this.selectedObject;
+    }
+
+    getObjects() {
+        return this.objects;
+    }
+}
+
+
+
+
+
+
 
 
 export class GUIElement {
@@ -2086,6 +2128,51 @@ export class GUIColorPanelElement extends GUIElement {
 }
 
 
+export class GUICrosshair extends GUIElement {
+    constructor(screen, x = 0, y = 0, scale = 1, gap = 0) {
+        super(screen);
+        this.x = x;
+        this.y = y;
+        this.scale = scale;
+        this.gap = gap;
+    }
+
+    render(ctx) {
+        const cx = this.x + 0.5;
+        const cy = this.y + 0.5;
+
+        const crosshairSize = 4 * this.scale;
+        const lineWidth = this.scale;
+
+        ctx.save();
+        ctx.globalCompositeOperation = 'difference';
+        ctx.strokeStyle = this.color;
+        ctx.lineWidth = lineWidth;
+
+        ctx.beginPath();
+        if (this.gap > 0) {
+            ctx.moveTo(cx - crosshairSize, cy);
+            ctx.lineTo(cx - this.gap, cy);
+            ctx.moveTo(cx + this.gap, cy);
+            ctx.lineTo(cx + crosshairSize, cy);
+
+            ctx.moveTo(cx, cy - crosshairSize);
+            ctx.lineTo(cx, cy - this.gap);
+            ctx.moveTo(cx, cy + this.gap);
+            ctx.lineTo(cx, cy + crosshairSize);
+        } else {
+            ctx.moveTo(cx - crosshairSize, cy);
+            ctx.lineTo(cx + crosshairSize, cy);
+            ctx.moveTo(cx, cy - crosshairSize);
+            ctx.lineTo(cx, cy + crosshairSize);
+        }
+
+        ctx.stroke();
+        ctx.restore();
+    }
+}
+
+
 export class GUIBitmapTextElement extends GUIElement {
     constructor(screen, text, x = 0, y = 0, rotation = 0, size = 3, color = 0xFFFFFF, shadow = true, opacity = 1, center = false) {
         super(screen);
@@ -2121,7 +2208,7 @@ export class GUIBitmapTextElement extends GUIElement {
         this.bitmapText.opacity = this.opacity;
         this.bitmapText.center = this.center;
 
-        this.bitmapText.rotation = 0;
+        this.bitmapText.rotation = this.rotation;
 
         super.render(ctx);
     }
@@ -2697,6 +2784,225 @@ export class GUISwitchElement extends GUIElement {
 }
 
 
+export class GUIWorldScrollListObjectElement extends GUIElement {
+    constructor(screen, text1 = "", text2 = "", text3 = "", spacing = 10, textSize = 3, x = 0, y = 0, width = 300, height = 80, center = false) {
+        super(screen);
+        this.bitmap_font = this.engine.bitmap_font;
+
+        this.text1 = text1;
+        this.text2 = text2;
+        this.text3 = text3;
+
+        this.spacing = spacing;
+        this.textSize = textSize;
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+
+        this.center = center;
+
+        this.Text1 = this.add(new GUIBitmapText(this.engine, this.text1, 0, 0, 0, this.textSize, un, un, 1, this.center));
+        this.Text2 = this.add(new GUIBitmapText(this.engine, this.text2, 0, 0, 0, this.textSize, un, un, 1, this.center));
+        this.Text3 = this.add(new GUIBitmapText(this.engine, this.text3, 0, 0, 0, this.textSize, un, un, 1, this.center));
+    }
+
+    render(ctx) {
+        if (!this.visible) return;
+
+        [this.Text1, this.Text2, this.Text3].forEach((Text) => {
+            switch (Text) {
+                case this.Text1:
+                    Text.text = this.text1;
+                    Text.y = this.y;
+                    break;
+                case this.Text2:
+                    Text.text = this.text2;
+                    Text.y = this.y + this.spacing;
+                    break;
+                case this.Text3:
+                    Text.text = this.text3;
+                    Text.y = this.y + this.spacing * 2;
+                    break;
+            }
+            Text.size = this.textSize;
+            Text.center = this.center;
+            Text.x = this.x;
+        })
+
+        super.render(ctx);
+    }
+}
+
+
+export class GUIWorldScrollListElement extends GUIElement {
+    constructor(screen, scrollListObjects = new ScrollListObjectList(), x = 0, y = 0, width = 200, height = 20, affectCursor = false, onClickEvent = null) {
+        super(screen);
+
+        this.input = this.engine.input;
+
+
+        this.isDisabled = false;
+
+        this.affectCursor = affectCursor;
+
+        this.text = text;
+
+        this.x = x;
+        this.y = y;
+        this.width = width;
+        this.height = height;
+
+        this.onClick = new EventList();
+        this.onRelease = new EventList();
+        this.onHover = new EventList();
+        this.onUnHover = new EventList();
+
+        this.clickSound = "click";
+        this.hoverSound = "hover";
+        this.unhoverSound = "release";
+
+        if (onClickEvent) this.onClick.addEvent(onClickEvent);
+
+        this.clickSound = "click";
+        this.hoverSound = "hover";
+
+        this.scale = 3;
+
+        this.sprite = this.addTextureSpritePanel("gui", -(this.width * this.scale / 2), -(this.height * this.scale / 2), 199, 19, this.state);
+        this.title = this.addBitmapText(this.text, 0 + (this.width * this.scale / 2), 0, 0, this.scale);
+    }
+
+    render(ctx) {
+        const mpos = this.input.getInputState("Mouse_Position") || { x: 999999, y: 999999 };
+        const mbuttonDown = this.input.getInputState("Mouse_Button_0") || false;
+        const mtriggerActive = this.input.getInputState("Mouse_Trigger_0") || false;
+
+        this.sprite.x = -(this.width * this.scale / 2);
+        this.sprite.y = -(this.height * this.scale / 2);
+
+        this.mouseHover = isPointInBox(mpos.x, mpos.y, this.x + this.sprite.x, this.y + this.sprite.y, this.sprite.w, this.sprite.h);
+        this.mousePress = mbuttonDown;
+
+        if (this.mouseHover && !this.isDisabled && (!this.engine.extraScreen || this.engine.extraScreen == this.screen) && !document.pointerLockElement) {
+            if (this.mousePress) {
+                if (this.interactState == "hover" && mtriggerActive) {
+                    this.interactState = "push";
+                    this.state = this.hovered;
+                    this.title.color = Enum.Color.SelectButtonColor;
+                }
+
+                if (this.interactState == "none") {
+                    this.interactState = "hover";
+                    this.state = this.hovered;
+                    this.title.color = Enum.Color.SelectButtonColor;
+
+                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
+                    this.onHover.runAll();
+
+                    switch (this.hoverSound) {
+                        case "hover": this.engine.playHover(); break;
+                        case "random": this.engine.playRandom(); break;
+                        case null: break;
+                        default: this.engine.playSound(this.clickSound); break;
+                    }
+
+                    if (this.affectCursor) {
+                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                    }
+                }
+
+                if (this.interactState == "push" && this.pushState == false) {
+                    this.pushState = true;
+
+                    this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
+                    this.engine.input_manager.mouseGUIButtonElementClick.runAll(this);
+                    this.onClick.runAll();
+
+                    switch (this.clickSound) {
+                        case "click": this.engine.playClick(); break;
+                        case "random": this.engine.playRandom(); break;
+                        case null: break;
+                        default: this.engine.playSound(this.clickSound); break;
+                    }
+
+                    if (this.mouseHover && this.screen == this.engine.screen && this.affectCursor) {
+                        this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                    }
+                }
+            } else {
+                if (this.interactState == "none") {
+                    this.interactState = "hover";
+                    this.title.color = Enum.Color.SelectButtonColor;
+                    this.state = this.hovered;
+                    this.engine.input_manager.mouseGUIButtonElementHover.runAll(this);
+                    this.onHover.runAll();
+                    switch (this.hoverSound) {
+                        case "hover": this.engine.playHover(); break;
+                        case "random": this.engine.playRandom(); break;
+                        case null: break;
+                        default: this.engine.playSound(this.clickSound); break;
+                    }
+                    if (this.affectCursor) this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                } else if (this.interactState == "push") {
+                    this.interactState = "hover";
+                    this.title.color = Enum.Color.SelectButtonColor;
+                    this.state = this.hovered;
+                    if (this.affectCursor) this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Pointer);
+                }
+                if (this.interactState == "hover" && this.pushState == true) {
+                    this.pushState = false;
+
+                    this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
+                    this.onRelease.runAll();
+                }
+            }
+        } else {
+            if (this.interactState == "hover" || this.interactState == "push") {
+                this.interactState = "none";
+
+                this.state = this.normal;
+                this.title.color = Enum.Color.NormalButtonColor;
+
+                this.engine.input_manager.mouseGUIButtonElementUnHover.runAll(this);
+                this.onUnHover.runAll();
+                switch (this.unhoverSound) {
+                    case "release": this.engine.playRelease(); break;
+                    case "random": this.engine.playRandom(); break;
+                    case null: break;
+                    default: this.engine.playSound(this.clickSound); break;
+                }
+
+                if (this.affectCursor) {
+                    this.engine.canvas_renderer.setCanvasCursor(Enum.CursorType.Default);
+                }
+            }
+            if (this.pushState == true) {
+                this.pushState = false;
+                this.engine.input_manager.mouseGUIButtonElementRelease.runAll(this);
+                this.onRelease.runAll();
+            }
+        }
+
+        if (this.isDisabled) {
+            this.sprite.cords = [0, 46, 200, 20];
+        } else {
+            this.sprite.cords = this.state;
+        }
+
+
+        this.sprite.w = this.width * this.scale;
+        this.sprite.h = this.height * this.scale;
+
+        this.title.x = 0 - this.title.getTextWidth() / 2;
+        this.title.y = 0 - this.title.getTextHeight() / 2;
+
+        super.render(ctx);
+    }
+}
+
+
 
 
 
@@ -2717,17 +3023,18 @@ export class Page {
         return element;
     }
 
-    addBlurPanel(intensity, x, y, width, height, rotation, opacity) { return this.addElement(new GUIBlurPanelElement(this, intensity, x, y, width, height, rotation, opacity)) };
-    addColorPanel(color, x, y, width, height, rotation, opacity) { return this.addElement(new GUIColorPanelElement(this, color, x, y, width, height, rotation, opacity)) };
-    addTexturePanel(textureID, x, y, width, height, rotation, opacity) { return this.addElement(new GUITexturePanelElement(this, textureID, x, y, width, height, rotation, opacity)) };
-    addImagePanel(image, x, y, width, height, rotation, opacity) { return this.addElement(new GUIImagePanelElement(this, image, x, y, width, height, rotation, opacity)) };
-    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledImagePanelElement(this, image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
-    addTiledTexturePanel(textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledTexturePanelElement(this, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
-    addTextureSpritePanel(textureID, x, y, width, height, cords, rotation, opacity) { return this.addElement(new GUITextureSpritePanelElement(this, textureID, x, y, width, height, cords, rotation, opacity)) };
-    addBitmapText(text, x, y, rotation, size, color, shadow, opacity, center) { return this.addElement(new GUIBitmapTextElement(this, text, x, y, rotation, size, color, shadow, opacity, center)) };
-    addButton(text, x, y, width, height, affectCursor, onClickEvent) { return this.addElement(new GUIButtonElement(this, text, x, y, width, height, affectCursor, onClickEvent)) };
-    addSwitch(text, options, value, x, y, width, height, affectCursor, onSwitchEvent) { return this.addElement(new GUISwitchElement(this, text, options, value, x, y, width, height, affectCursor, onSwitchEvent)) };
-    addSlider(title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor, onSlideEvent) { return this.addElement(new GUISliderElement(this, title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor, onSlideEvent)) };
+    addBlurPanel(intensity, x, y, width, height, rotation, opacity) { return this.addElement(new GUIBlurPanelElement(this.screen, intensity, x, y, width, height, rotation, opacity)) };
+    addColorPanel(color, x, y, width, height, rotation, opacity) { return this.addElement(new GUIColorPanelElement(this.screen, color, x, y, width, height, rotation, opacity)) };
+    addTexturePanel(textureID, x, y, width, height, rotation, opacity) { return this.addElement(new GUITexturePanelElement(this.screen, textureID, x, y, width, height, rotation, opacity)) };
+    addImagePanel(image, x, y, width, height, rotation, opacity) { return this.addElement(new GUIImagePanelElement(this.screen, image, x, y, width, height, rotation, opacity)) };
+    addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledImagePanelElement(this.screen, image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
+    addTiledTexturePanel(textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledTexturePanelElement(this.screen, textureID, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
+    addTextureSpritePanel(textureID, x, y, width, height, cords, rotation, opacity) { return this.addElement(new GUITextureSpritePanelElement(this.screen, textureID, x, y, width, height, cords, rotation, opacity)) };
+    addBitmapText(text, x, y, rotation, size, color, shadow, opacity, center) { return this.addElement(new GUIBitmapTextElement(this.screen, text, x, y, rotation, size, color, shadow, opacity, center)) };
+    addButton(text, x, y, width, height, affectCursor, onClickEvent) { return this.addElement(new GUIButtonElement(this.screen, text, x, y, width, height, affectCursor, onClickEvent)) };
+    addSwitch(text, options, value, x, y, width, height, affectCursor, onSwitchEvent) { return this.addElement(new GUISwitchElement(this.screen, text, options, value, x, y, width, height, affectCursor, onSwitchEvent)) };
+    addSlider(title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor, onSlideEvent) { return this.addElement(new GUISliderElement(this.screen, title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor, onSlideEvent)) };
+    addWorldScrollListObject(text1, text2, text3, spacing, textSize, x, y, width, height, center) { return this.addElement(new GUIWorldScrollListObjectElement(this.screen, text1, text2, text3, spacing, textSize, x, y, width, height, center)) };
 
     render(ctx) {
         this.guiElements.forEach((element) => {
@@ -2799,6 +3106,7 @@ export class Screen {
     addButton(...args) { return this.getPage().addButton(...args); }
     addSwitch(...args) { return this.getPage().addSwitch(...args); }
     addSlider(...args) { return this.getPage().addSlider(...args); }
+    addWorldScrollListObject(...args) { return this.getPage().addWorldScrollListObject(...args); }
     */
 
     addBlurPanel(intensity, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUIBlurPanelElement(this, intensity, x, y, width, height, rotation, opacity)) };
@@ -2812,6 +3120,7 @@ export class Screen {
     addButton(text, x, y, width, height, affectCursor, onClickEvent) { return this.getPage().addElement(new GUIButtonElement(this, text, x, y, width, height, affectCursor, onClickEvent)) };
     addSwitch(text, options, value, x, y, width, height, affectCursor, onSwitchEvent) { return this.getPage().addElement(new GUISwitchElement(this, text, options, value, x, y, width, height, affectCursor, onSwitchEvent)) };
     addSlider(title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor, onSlideEvent) { return this.getPage().addElement(new GUISliderElement(this, title, texts, beforemark, mark, start, stop, step, value, x, y, width, height, affectCursor, onSlideEvent)) };
+    addWorldScrollListObject(text1, text2, text3, spacing, textSize, x, y, width, height, center) { return this.getPage().addElement(new GUIWorldScrollListObjectElement(this, text1, text2, text3, spacing, textSize, x, y, width, height, center)) };
 
     init() { };
 
@@ -2959,7 +3268,7 @@ export class MenuScreen extends Screen {
         this.addImagePanel(this.gradientImage, 0, 0, canvasW, canvasH, 0, 0.25);
         this.addTexturePanel("logo", canvasW / 2 - 500, 100, 1000, 170);
 
-        this.splashText = this.addBitmapText(this.splashTextStr, centerX + 350, 250, -20, 5, 0xFFFF00, true, 1, true);
+        this.splashText = this.addBitmapText(this.splashTextStr, centerX + 330, 237, -10, 5, 0xFFFF00, true, 1, true);
 
         this.addBitmapText("by Fraeric123", left - 225, down - 30, 0, 3);
         this.addBitmapText("Alpha Test Build no." + build, 10, down - 60, 0, 3);
@@ -2990,9 +3299,10 @@ export class MenuScreen extends Screen {
         const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
         const rotY = (-this.engine.ms() / 10 * 0.1) * speedFactor * deg2rad;
 
+        const textScaleFactor = 1;
         const timeMs = this.engine.ms() % 1000;
         const wave = Math.abs(Math.sin((timeMs / 1000) * Math.PI * 2));
-        const scaleFactor = 1.8 - wave * 0.1;
+        const scaleFactor = (1.8 * textScaleFactor) - wave * 0.1 * textScaleFactor;
 
         const textWidth = this.splashText.getTextWidth(this.splashText.text, 1);
 
@@ -3438,6 +3748,9 @@ export class WorldSelectScreen extends Screen {
                 this.renameBut.isDisabled = true;
                 this.deleteBut.isDisabled = true;
         */
+
+        this.addWorldScrollListObject("New World", "New World (7/25/26 6:53 PM)", "Survival Mode", 35, 3, 500, 500, 500, 500, false);
+
         this.createNewBut.onClick.addEvent(() => { engine.setScreen(engine.createWorldScreen) });
         this.cancelBut.onClick.addEvent(() => { engine.setScreen(engine.menuScreen) });
 
@@ -3903,14 +4216,14 @@ export class GameMenuScreen extends Screen {
         this.addBitmapText("Game Menu", centerX, centerY - 300, 0, 3, 0xFFFFFF, true, 1, true);
 
         this.addButton("Back To Game", centerX, centerY - 200, 200, un, un, () => { engine.input_manager.lockMouse() });
-        this.addButton("Options", centerX,centerY + 20, 200, un, un, () => { engine.setExtraScreen(engine.inGameOptionsScreen) });
+        this.addButton("Options", centerX, centerY + 20, 200, un, un, () => { engine.setExtraScreen(engine.inGameOptionsScreen) });
         this.addButton("Save and quit to title", centerX, centerY + 100, 200, un, un, () => { engine.saveAndQuitWorld() });
 
         engine.input_manager.enteredPointerlock.addEvent(() => { if (engine.extraScreen == this) { engine.extraScreen = null; this.engine.level.pause = false; } });
     }
 
     render(ctx) {
-        this.blur.visible = this.engine.config.data.BlurEffects;        
+        this.blur.visible = this.engine.config.data.BlurEffects;
         this.blur.intensity = this.engine.config.data.BlurIntensity;
 
         super.render(ctx);
@@ -4143,7 +4456,7 @@ export class InGameOptionsScreen extends Screen {
             un, un, un,
             (val) => { engine.config.data.BlurIntensity = val }
         );
-        
+
 
         const particlesSwitch = this.addSwitch(
             "Particles",
@@ -5692,7 +6005,6 @@ export class Zombie extends Entity {
 
 
 
-
 export class Level {
     constructor(engine, w, h, d) {
         this.engine = engine;
@@ -5721,7 +6033,7 @@ export class Level {
         this.onSave = new EventList();
 
         this.texture = this.engine.asset_manager.get("terrain");
-        this.texture.flipY = true;
+        this.texture.flipY = false;
         this.texture.magFilter = THREE.NearestFilter;
         this.texture.minFilter = THREE.NearestFilter;
         this.material = new THREE.MeshBasicMaterial({
@@ -5741,8 +6053,7 @@ export class Level {
     }
 
     load(data) {
-        this.calcLightDepths(0, 0, w, h);
-
+        this.calcLightDepths(0, 0, this.width, this.height);
         this.onGenerate.runAll();
     }
 
@@ -5834,7 +6145,9 @@ export class Level {
             this.selectionMaterial.opacity = 0.2 + Math.sin(performance.now() * 0.01) * 0.1;
         } else {
             this.selectionMesh.visible = false;
-        }        
+        }
+
+        this.engine.levelRenderer.updateFrustum(this.camera);
 
         this.engine.levelRenderer.render(this.player, 0);
         this.engine.levelRenderer.render(this.player, 1);
@@ -5951,6 +6264,13 @@ export class Level {
         return this.blocks[(y * this.height + z) * this.width + x] === 1;
     }
 
+    getTile(x, y, z) {
+        if (x < 0 || y < 0 || z < 0 || x >= this.width || y >= this.depth || z >= this.height) {
+            return 0;
+        }
+        return this.blocks[(y * this.height + z) * this.width + x] & 0xFF;
+    }
+
     isSolidTile(x, y, z) {
         return this.isTile(x, y, z);
     }
@@ -6027,12 +6347,262 @@ export class Level {
 }
 
 
+
+
+
+
+
+
+export class Frustum {
+    static _instance = new Frustum();
+
+    constructor() {
+        this.m_Frustum = Array.from({ length: 6 }, () => new Float32Array(4));
+
+        this.proj = new Float32Array(16);
+        this.modl = new Float32Array(16);
+        this.clip = new Float32Array(16);
+    }
+
+    static RIGHT = 0;
+    static LEFT = 1;
+    static BOTTOM = 2;
+    static TOP = 3;
+    static BACK = 4;
+    static FRONT = 5;
+
+    static getFrustum(projectionMatrix, modelViewMatrix) {
+        if (projectionMatrix && modelViewMatrix) {
+            Frustum._instance.calculateFrustum(projectionMatrix, modelViewMatrix);
+        }
+        return Frustum._instance;
+    }
+
+    normalizePlane(side) {
+        const f = this.m_Frustum[side];
+        const magnitude = Math.sqrt(f[0] * f[0] + f[1] * f[1] + f[2] * f[2]);
+
+        f[0] /= magnitude;
+        f[1] /= magnitude;
+        f[2] /= magnitude;
+        f[3] /= magnitude;
+    }
+
+    calculateFrustum(projectionMatrix, modelViewMatrix) {
+        this.proj.set(projectionMatrix);
+        this.modl.set(modelViewMatrix);
+
+        const modl = this.modl;
+        const proj = this.proj;
+        const clip = this.clip;
+
+        clip[0] = modl[0] * proj[0] + modl[1] * proj[4] + modl[2] * proj[8] + modl[3] * proj[12];
+        clip[1] = modl[0] * proj[1] + modl[1] * proj[5] + modl[2] * proj[9] + modl[3] * proj[13];
+        clip[2] = modl[0] * proj[2] + modl[1] * proj[6] + modl[2] * proj[10] + modl[3] * proj[14];
+        clip[3] = modl[0] * proj[3] + modl[1] * proj[7] + modl[2] * proj[11] + modl[3] * proj[15];
+
+        clip[4] = modl[4] * proj[0] + modl[5] * proj[4] + modl[6] * proj[8] + modl[7] * proj[12];
+        clip[5] = modl[4] * proj[1] + modl[5] * proj[5] + modl[6] * proj[9] + modl[7] * proj[13];
+        clip[6] = modl[4] * proj[2] + modl[5] * proj[6] + modl[6] * proj[10] + modl[7] * proj[14];
+        clip[7] = modl[4] * proj[3] + modl[5] * proj[7] + modl[6] * proj[11] + modl[7] * proj[15];
+
+        clip[8] = modl[8] * proj[0] + modl[9] * proj[4] + modl[10] * proj[8] + modl[11] * proj[12];
+        clip[9] = modl[8] * proj[1] + modl[9] * proj[5] + modl[10] * proj[9] + modl[11] * proj[13];
+        clip[10] = modl[8] * proj[2] + modl[9] * proj[6] + modl[10] * proj[10] + modl[11] * proj[14];
+        clip[11] = modl[8] * proj[3] + modl[9] * proj[7] + modl[10] * proj[11] + modl[11] * proj[15];
+
+        clip[12] = modl[12] * proj[0] + modl[13] * proj[4] + modl[14] * proj[8] + modl[15] * proj[12];
+        clip[13] = modl[12] * proj[1] + modl[13] * proj[5] + modl[14] * proj[9] + modl[15] * proj[13];
+        clip[14] = modl[12] * proj[2] + modl[13] * proj[6] + modl[14] * proj[10] + modl[15] * proj[14];
+        clip[15] = modl[12] * proj[3] + modl[13] * proj[7] + modl[14] * proj[11] + modl[15] * proj[15];
+
+        this.m_Frustum[0][0] = clip[3] - clip[0];
+        this.m_Frustum[0][1] = clip[7] - clip[4];
+        this.m_Frustum[0][2] = clip[11] - clip[8];
+        this.m_Frustum[0][3] = clip[15] - clip[12];
+        this.normalizePlane(0);
+
+        this.m_Frustum[1][0] = clip[3] + clip[0];
+        this.m_Frustum[1][1] = clip[7] + clip[4];
+        this.m_Frustum[1][2] = clip[11] + clip[8];
+        this.m_Frustum[1][3] = clip[15] + clip[12];
+        this.normalizePlane(1);
+
+        this.m_Frustum[2][0] = clip[3] + clip[1];
+        this.m_Frustum[2][1] = clip[7] + clip[5];
+        this.m_Frustum[2][2] = clip[11] + clip[9];
+        this.m_Frustum[2][3] = clip[15] + clip[13];
+        this.normalizePlane(2);
+
+        this.m_Frustum[3][0] = clip[3] - clip[1];
+        this.m_Frustum[3][1] = clip[7] - clip[5];
+        this.m_Frustum[3][2] = clip[11] - clip[9];
+        this.m_Frustum[3][3] = clip[15] - clip[13];
+        this.normalizePlane(3);
+
+        this.m_Frustum[4][0] = clip[3] - clip[2];
+        this.m_Frustum[4][1] = clip[7] - clip[6];
+        this.m_Frustum[4][2] = clip[11] - clip[10];
+        this.m_Frustum[4][3] = clip[15] - clip[14];
+        this.normalizePlane(4);
+
+        this.m_Frustum[5][0] = clip[3] + clip[2];
+        this.m_Frustum[5][1] = clip[7] + clip[6];
+        this.m_Frustum[5][2] = clip[11] + clip[10];
+        this.m_Frustum[5][3] = clip[15] + clip[14];
+        this.normalizePlane(5);
+    }
+
+    cubeInFrustum(x1, y1, z1, x2, y2, z2) {
+        for (let i = 0; i < 6; i++) {
+            const f = this.m_Frustum[i];
+            if (
+                f[0] * x1 + f[1] * y1 + f[2] * z1 + f[3] > 0 ||
+                f[0] * x2 + f[1] * y1 + f[2] * z1 + f[3] > 0 ||
+                f[0] * x1 + f[1] * y2 + f[2] * z1 + f[3] > 0 ||
+                f[0] * x2 + f[1] * y2 + f[2] * z1 + f[3] > 0 ||
+                f[0] * x1 + f[1] * y1 + f[2] * z2 + f[3] > 0 ||
+                f[0] * x2 + f[1] * y1 + f[2] * z2 + f[3] > 0 ||
+                f[0] * x1 + f[1] * y2 + f[2] * z2 + f[3] > 0 ||
+                f[0] * x2 + f[1] * y2 + f[2] * z2 + f[3] > 0
+            ) {
+                continue;
+            }
+            return false;
+        }
+        return true;
+    }
+
+    isVisible(aabb) {
+        return this.cubeInFrustum(aabb.x0, aabb.y0, aabb.z0, aabb.x1, aabb.y1, aabb.z1);
+    }
+}
+
+
+export class Chunk {
+    static rebuiltThisFrame = 0;
+    static updates = 0;
+
+    constructor(level, x0, y0, z0, x1, y1, z1) {
+        this.level = level;
+        this.t = level.engine.t;
+
+        this.x0 = x0;
+        this.y0 = y0;
+        this.z0 = z0;
+        this.x1 = x1;
+        this.y1 = y1;
+        this.z1 = z1;
+
+        this.x = (this.x0 + this.x1) / 2;
+        this.y = (this.y0 + this.y1) / 2;
+        this.z = (this.z0 + this.z1) / 2;
+
+        this.aabb = new AABB(x0, y0, z0, x1, y1, z1);
+        this.dirty = true;
+
+        this.texture = level.texture;
+        this.material = level.material;
+
+        this.meshes = [new THREE.Mesh(), new THREE.Mesh()];
+        this.meshes.forEach(m => {
+            m.frustumCulled = true;
+            //m.matrixAutoUpdate = false;
+            //m.updateMatrix();
+        });
+
+        this.visible = true;
+    }
+
+    rebuild(layer) {
+        this.dirty = false;
+        this.dirtiedTime = Date.now();
+        Chunk.updates++;
+        Chunk.rebuiltThisFrame++;
+
+        this.t.init();
+
+        for (let x = this.x0; x < this.x1; x++) {
+            for (let y = this.y0; y < this.y1; y++) {
+                for (let z = this.z0; z < this.z1; z++) {
+
+                    const tileId = this.level.getTile(x, y, z);
+
+                    if (tileId > 0) {
+                        const tile = Tile.tiles[tileId];
+                        tile.render(this.t, this.level, layer, x, y, z);
+                    }
+                }
+            }
+        }
+
+        if (this.meshes[layer].geometry) {
+            this.meshes[layer].geometry.dispose();
+        }
+
+        if (this.t.vertexCount > 0) {
+            const newGeometry = this.t.flush();
+            if (newGeometry) {
+                this.meshes[layer].geometry = newGeometry;
+                this.meshes[layer].material = layer === 1 ? this.transparentMaterial : this.material;
+                this.meshes[layer].visible = true;
+            } else {
+                this.meshes[layer].geometry = new THREE.BufferGeometry();
+                this.meshes[layer].visible = false;
+            }
+        } else {
+            this.meshes[layer].geometry = new THREE.BufferGeometry();
+            this.meshes[layer].visible = false;
+        }
+    }
+
+    render(layer) {
+        if (this.dirty) {
+            this.rebuild(0);
+            this.rebuild(1);
+        }
+
+        const hasPositions = !!this.meshes[layer]?.geometry?.attributes?.position;
+        this.meshes[layer].visible = hasPositions;
+    }
+
+    distanceToSqr(player) {
+        const xd = player.x - this.x;
+        const yd = player.y - this.y;
+        const zd = player.z - this.z;
+        return xd * xd + yd * yd + zd * zd;
+    }
+
+    setDirty() {
+        this.dirty = true;
+    }
+
+    destroy() {
+        for (let i = 0; i < 2; i++) {
+            if (this.meshes[i]) {
+                if (this.meshes[i].geometry) {
+                    this.meshes[i].geometry.dispose();
+                }
+                if (this.meshes[i].parent) {
+                    this.meshes[i].parent.remove(this.meshes[i]);
+                }
+            }
+        }
+        this.meshes = [];
+    }
+}
+
+
 export class LevelRenderer {
     constructor(level, scene) {
         this.CHUNK_SIZE = 16;
         this.level = level;
         this.scene = scene;
-        this.t = new Tesselator();
+        this.t = level.engine.t;
+
+        this.drawDistance = 0;
+
+        this.frustum = new Frustum();
 
         this.xChunks = Math.ceil(level.width / this.CHUNK_SIZE);
         this.yChunks = Math.ceil(level.depth / this.CHUNK_SIZE);
@@ -6063,12 +6633,54 @@ export class LevelRenderer {
         level.addListener(this);
     }
 
+    updateFrustum(camera) {
+        if (!camera) return;
+        if (camera.updateMatrixWorld) camera.updateMatrixWorld();
+        this.frustum = Frustum.getFrustum(
+            camera.projectionMatrix.elements,
+            camera.matrixWorldInverse.elements
+        );
+    }
+
     render(player, layer) {
         Chunk.rebuiltThisFrame = 0;
 
-        for (let chunk of this.chunks) {
-            chunk.render(layer);
+        const xd = player.x - this.lX;
+        const yd = player.y - this.lY;
+        const zd = player.z - this.lZ;
+
+        if ((xd * xd + yd * yd + zd * zd) > 64.0) {
+            this.lX = player.x;
+            this.lY = player.y;
+            this.lZ = player.z;
+
+            this.chunks.sort((chunkA, chunkB) => {
+                return chunkA.distanceToSqr(player) - chunkB.distanceToSqr(player);
+            });
         }
+
+        const dd = 256 >> this.drawDistance;
+        const maxDistanceSqr = dd * dd;
+
+        const frustum = this.frustum;
+        const hasFrustum = !!frustum;
+
+        this.chunks.forEach(chunk => {
+            if (hasFrustum && !frustum.isVisible(chunk.aabb)) {
+                chunk.visible = false;
+                chunk.meshes[layer].visible = false;
+                return;
+            }
+
+            if (this.drawDistance !== 0 && chunk.distanceToSqr(player) >= maxDistanceSqr) {
+                chunk.visible = false;
+                chunk.meshes[layer].visible = false;
+                return;
+            }
+
+            chunk.visible = true;
+            chunk.render(layer);
+        });
     }
 
     setDirty(x0, y0, z0, x1, y1, z1) {
@@ -6119,33 +6731,40 @@ export class LevelRenderer {
 
 
 export class Tesselator {
-    constructor() {
-        this.MAX_VERTICES = 300000;
+    static instance = new Tesselator();
 
-        this.vertexArray = new Float32Array(this.MAX_VERTICES * 3);
-        this.texCoordArray = new Float32Array(this.MAX_VERTICES * 2);
-        this.colorArray = new Float32Array(this.MAX_VERTICES * 3);
+    constructor(maxVertices = 65536) {
+        this.positions = new Float32Array(maxVertices * 3);
+        this.uvs = new Float32Array(maxVertices * 2);
+        this.colors = new Float32Array(maxVertices * 3);
 
-        this.vertices = 0;
+        this.quadBufferPositions = new Float32Array(12);
+        this.quadBufferUVs = new Float32Array(8);
+        this.quadBufferColors = new Float32Array(12);
 
-        this.u = 0;
-        this.v = 0;
-        this.r = 1.0;
-        this.g = 1.0;
-        this.b = 1.0;
+        this.quadVertexCount = 0;
+        this.vertexCount = 0;
 
+        this.u = 0; this.v = 0;
+        this.r = 1; this.g = 1; this.b = 1;
         this.hasColor = false;
         this.hasTexture = false;
+        this.isLines = false;
     }
 
-    init() {
-        this.clear();
+    init(isLines = false) {
+        this.vertexCount = 0;
+        this.quadVertexCount = 0;
         this.hasColor = false;
         this.hasTexture = false;
+        this.isLines = isLines;
     }
 
-    clear() {
-        this.vertices = 0;
+    colorRGBA(c) {
+        const r = ((c >> 16) & 0xFF) / 255.0;
+        const g = ((c >> 8) & 0xFF) / 255.0;
+        const b = (c & 0xFF) / 255.0;
+        this.color(r, g, b);
     }
 
     tex(u, v) {
@@ -6161,46 +6780,91 @@ export class Tesselator {
         this.b = b;
     }
 
+    noColor() {
+        this.noColor = true;
+    }
+
+    vertexUV(x, y, z, u, v) {
+        this.tex(u, v);
+        this.vertex(x, y, z);
+    }
+
     vertex(x, y, z) {
-        if (this.vertices >= this.MAX_VERTICES) {
-            console.warn("Tesselator is full!");
+        if (this.isLines) {
+            this.addSingleVertex(x, y, z, this.u, this.v, this.r, this.g, this.b);
             return;
         }
 
-        const v3 = this.vertices * 3;
-        const v2 = this.vertices * 2;
+        const qIdx3 = this.quadVertexCount * 3;
+        const qIdx2 = this.quadVertexCount * 2;
 
-        this.vertexArray[v3 + 0] = x;
-        this.vertexArray[v3 + 1] = y;
-        this.vertexArray[v3 + 2] = z;
+        this.quadBufferPositions[qIdx3] = x;
+        this.quadBufferPositions[qIdx3 + 1] = y;
+        this.quadBufferPositions[qIdx3 + 2] = z;
+
+        this.quadBufferUVs[qIdx2] = this.u;
+        this.quadBufferUVs[qIdx2 + 1] = this.v;
+
+        this.quadBufferColors[qIdx3] = this.r;
+        this.quadBufferColors[qIdx3 + 1] = this.g;
+        this.quadBufferColors[qIdx3 + 2] = this.b;
+
+        this.quadVertexCount++;
+
+        if (this.quadVertexCount === 4) {
+            const indices = [0, 1, 2, 0, 2, 3];
+            for (let i = 0; i < 6; i++) {
+                const idx = indices[i];
+                this.addSingleVertex(
+                    this.quadBufferPositions[idx * 3],
+                    this.quadBufferPositions[idx * 3 + 1],
+                    this.quadBufferPositions[idx * 3 + 2],
+                    this.quadBufferUVs[idx * 2],
+                    this.quadBufferUVs[idx * 2 + 1],
+                    this.quadBufferColors[idx * 3],
+                    this.quadBufferColors[idx * 3 + 1],
+                    this.quadBufferColors[idx * 3 + 2]
+                );
+            }
+            this.quadVertexCount = 0;
+        }
+    }
+
+    addSingleVertex(x, y, z, u, v, r, g, b) {
+        const vIdx3 = this.vertexCount * 3;
+        const vIdx2 = this.vertexCount * 2;
+
+        this.positions[vIdx3] = x;
+        this.positions[vIdx3 + 1] = y;
+        this.positions[vIdx3 + 2] = z;
 
         if (this.hasTexture) {
-            this.texCoordArray[v2 + 0] = this.u;
-            this.texCoordArray[v2 + 1] = this.v;
+            this.uvs[vIdx2] = u;
+            this.uvs[vIdx2 + 1] = v;
         }
 
         if (this.hasColor) {
-            this.colorArray[v3 + 0] = this.r;
-            this.colorArray[v3 + 1] = this.g;
-            this.colorArray[v3 + 2] = this.b;
+            this.colors[vIdx3] = r;
+            this.colors[vIdx3 + 1] = g;
+            this.colors[vIdx3 + 2] = b;
         }
 
-        this.vertices++;
+        this.vertexCount++;
     }
 
-    createGeometry() {
-        if (this.vertices === 0) return null;
+    flush() {
+        if (this.vertexCount === 0) return null;
 
         const geometry = new THREE.BufferGeometry();
 
-        geometry.setAttribute('position', new THREE.BufferAttribute(this.vertexArray.slice(0, this.vertices * 3), 3));
+        geometry.setAttribute('position', new THREE.BufferAttribute(this.positions.slice(0, this.vertexCount * 3), 3));
 
-        if (this.hasTexture) {
-            geometry.setAttribute('uv', new THREE.BufferAttribute(this.texCoordArray.slice(0, this.vertices * 2), 2));
+        if (this.hasTexture && !this.isLines) {
+            geometry.setAttribute('uv', new THREE.BufferAttribute(this.uvs.slice(0, this.vertexCount * 2), 2));
         }
 
         if (this.hasColor) {
-            geometry.setAttribute('color', new THREE.BufferAttribute(this.colorArray.slice(0, this.vertices * 3), 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(this.colors.slice(0, this.vertexCount * 3), 3));
         }
 
         geometry.computeBoundingSphere();
@@ -6216,110 +6880,254 @@ export class Tesselator {
 
 
 
-
 export class Tile {
-    static grass = new Tile(0);
-    static rock = new Tile(1);
+    static tiles = new Array(256).fill(null);
 
-    constructor(tex) {
+    static NOT_LIQUID = 0;
+    static LIQUID_WATER = 1;
+    static LIQUID_LAVA = 2;
+
+    constructor(id, tex) {
+        this.level = null;
+        this.id = id;
         this.tex = tex;
+        Tile.tiles[id] = this;
+        this.shouldTick = false;
+        this.xx0 = 0;
+        this.yy0 = 0;
+        this.zz0 = 0;
+        this.xx1 = 0;
+        this.yy1 = 0;
+        this.zz1 = 0;
+        this.setShape(0.0, 0.0, 0.0, 1.0, 1.0, 1.0);
+    }
+
+    setTicking(tick) {
+        this.shouldTick = tick;
+    }
+
+    setShape(x0, y0, z0, x1, y1, z1) {
+        this.xx0 = x0;
+        this.yy0 = y0;
+        this.zz0 = z0;
+        this.xx1 = x1;
+        this.yy1 = y1;
+        this.zz1 = z1;
     }
 
     render(t, level, layer, x, y, z) {
-        const eps = 0.0001;
-
-        const u0 = (this.tex % 16) / 16.0 + eps;
-        const u1 = u0 + (1 / 16.0) - 2 * eps;
-        const row = Math.floor(this.tex / 16);
-        const v1 = 1.0 - (row / 16.0) - eps;
-        const v0 = 1.0 - ((row + 1) / 16.0) + eps;
-
+        this.level = level;
         const c1 = 1.0;
         const c2 = 0.8;
         const c3 = 0.6;
+        if (this.shouldRenderFace(level, x, y - 1, z, layer, 0)) {
+            t.color(c1, c1, c1);
+            this.renderFace(t, x, y, z, 0);
+        }
+        if (this.shouldRenderFace(level, x, y + 1, z, layer, 1)) {
+            t.color(c1, c1, c1);
+            this.renderFace(t, x, y, z, 1);
+        }
+        if (this.shouldRenderFace(level, x, y, z - 1, layer, 2)) {
+            t.color(c2, c2, c2);
+            this.renderFace(t, x, y, z, 2);
+        }
+        if (this.shouldRenderFace(level, x, y, z + 1, layer, 3)) {
+            t.color(c2, c2, c2);
+            this.renderFace(t, x, y, z, 3);
+        }
+        if (this.shouldRenderFace(level, x - 1, y, z, layer, 4)) {
+            t.color(c3, c3, c3);
+            this.renderFace(t, x, y, z, 4);
+        }
+        if (this.shouldRenderFace(level, x + 1, y, z, layer, 5)) {
+            t.color(c3, c3, c3);
+            this.renderFace(t, x, y, z, 5);
+        }
+    }
 
-        const x0 = x, x1 = x + 1.0;
-        const y0 = y, y1 = y + 1.0;
-        const z0 = z, z1 = z + 1.0;
-
-        let br;
-
-        if (!level.isSolidTile(x, y - 1, z)) {
-            br = level.getBrightness(x, y - 1, z) * c1;
-            if ((br === c1) ^ (layer === 1)) {
-                t.color(br, br, br);
-                this.addQuad(t,
-                    x0, y0, z1, u0, v1,
-                    x0, y0, z0, u0, v0,
-                    x1, y0, z0, u1, v0,
-                    x1, y0, z1, u1, v1
-                );
-            }
+    renderFace(t, x, y, z, face, nbmode = false) {
+        if (!nbmode) {
+            let brightness = 1.0;
+            if (face === 0) brightness = this.getBrightness(this.level, x, y - 1, z) * 0.5;
+            if (face === 1) brightness = this.getBrightness(this.level, x, y + 1, z) * 1.0;
+            if (face === 2) brightness = this.getBrightness(this.level, x, y, z - 1) * 0.8;
+            if (face === 3) brightness = this.getBrightness(this.level, x, y, z + 1) * 0.8;
+            if (face === 4) brightness = this.getBrightness(this.level, x - 1, y, z) * 0.6;
+            if (face === 5) brightness = this.getBrightness(this.level, x + 1, y, z) * 0.6;
+            t.color(brightness, brightness, brightness);
         }
 
-        if (!level.isSolidTile(x, y + 1, z)) {
-            br = level.getBrightness(x, y, z) * c1;
-            if ((br === c1) ^ (layer === 1)) {
-                t.color(br, br, br);
-                this.addQuad(t,
-                    x1, y1, z1, u1, v1,
-                    x1, y1, z0, u1, v0,
-                    x0, y1, z0, u0, v0,
-                    x0, y1, z1, u0, v1
-                );
-            }
+        const tex = this.getTexture(face);
+
+        const texOff = (tex % 16) * 16;
+        const u1 = (texOff + 15.99) / 256.0; const u0 = texOff / 256.0;
+        const texOffV = Math.floor(tex / 16) * 16;
+        const v1 = (texOffV + 15.99) / 256.0; const v0 = texOffV / 256.0;
+
+        const x0 = x + this.xx0;
+        const x1 = x + this.xx1;
+        const y0 = y + this.yy0;
+        const y1 = y + this.yy1;
+        const z0 = z + this.zz0;
+        const z1 = z + this.zz1;
+
+        if (face == 0) {
+            t.vertexUV(x0, y0, z1, u0, v1);
+            t.vertexUV(x0, y0, z0, u0, v0);
+            t.vertexUV(x1, y0, z0, u1, v0);
+            t.vertexUV(x1, y0, z1, u1, v1);
+        }
+        if (face == 1) {
+            t.vertexUV(x1, y1, z1, u1, v1);
+            t.vertexUV(x1, y1, z0, u1, v0);
+            t.vertexUV(x0, y1, z0, u0, v0);
+            t.vertexUV(x0, y1, z1, u0, v1);
+        }
+        if (face == 2) {
+            t.vertexUV(x0, y1, z0, u1, v0);
+            t.vertexUV(x1, y1, z0, u0, v0);
+            t.vertexUV(x1, y0, z0, u0, v1);
+            t.vertexUV(x0, y0, z0, u1, v1);
+        }
+        if (face == 3) {
+            t.vertexUV(x0, y1, z1, u0, v0);
+            t.vertexUV(x0, y0, z1, u0, v1);
+            t.vertexUV(x1, y0, z1, u1, v1);
+            t.vertexUV(x1, y1, z1, u1, v0);
+        }
+        if (face == 4) {
+            t.vertexUV(x0, y1, z1, u1, v0);
+            t.vertexUV(x0, y1, z0, u0, v0);
+            t.vertexUV(x0, y0, z0, u0, v1);
+            t.vertexUV(x0, y0, z1, u1, v1);
+        }
+        if (face == 5) {
+            t.vertexUV(x1, y0, z1, u0, v1);
+            t.vertexUV(x1, y0, z0, u1, v1);
+            t.vertexUV(x1, y1, z0, u1, v0);
+            t.vertexUV(x1, y1, z1, u0, v0);
+        }
+    }
+
+    renderBackFace(t, x, y, z, face, nbmode = false) {
+        if (!nbmode) {
+            let brightness = 1.0;
+            if (face === 0) brightness = this.getBrightness(this.level, x, y - 1, z) * 0.5;
+            if (face === 1) brightness = this.getBrightness(this.level, x, y + 1, z) * 1.0;
+            if (face === 2) brightness = this.getBrightness(this.level, x, y, z - 1) * 0.8;
+            if (face === 3) brightness = this.getBrightness(this.level, x, y, z + 1) * 0.8;
+            if (face === 4) brightness = this.getBrightness(this.level, x - 1, y, z) * 0.6;
+            if (face === 5) brightness = this.getBrightness(this.level, x + 1, y, z) * 0.6;
+            t.color(brightness, brightness, brightness);
         }
 
-        if (!level.isSolidTile(x, y, z - 1)) {
-            br = level.getBrightness(x, y, z - 1) * c2;
-            if ((br === c2) ^ (layer === 1)) {
-                t.color(br, br, br);
-                this.addQuad(t,
-                    x0, y1, z0, u1, v0,
-                    x1, y1, z0, u0, v0,
-                    x1, y0, z0, u0, v1,
-                    x0, y0, z0, u1, v1
-                );
-            }
+        const tex = this.getTexture(face);
+
+        const texOff = (tex % 16) * 16;
+        const u1 = (texOff + 15.99) / 256.0; const u0 = texOff / 256.0;
+        const texOffV = Math.floor(tex / 16) * 16;
+        const v1 = (texOffV + 15.99) / 256.0; const v0 = texOffV / 256.0;
+
+        const x0 = x + this.xx0;
+        const x1 = x + this.xx1;
+        const y0 = y + this.yy0;
+        const y1 = y + this.yy1;
+        const z0 = z + this.zz0;
+        const z1 = z + this.zz1;
+
+        if (face == 0) {
+            t.vertexUV(x1, y0, z1, u1, v1);
+            t.vertexUV(x1, y0, z0, u1, v0);
+            t.vertexUV(x0, y0, z0, u0, v0);
+            t.vertexUV(x0, y0, z1, u0, v1);
+        }
+        if (face == 1) {
+            t.vertexUV(x0, y1, z1, u0, v1);
+            t.vertexUV(x0, y1, z0, u0, v0);
+            t.vertexUV(x1, y1, z0, u1, v0);
+            t.vertexUV(x1, y1, z1, u1, v1);
+        }
+        if (face == 2) {
+            t.vertexUV(x0, y0, z0, u1, v1);
+            t.vertexUV(x1, y0, z0, u0, v1);
+            t.vertexUV(x1, y1, z0, u0, v0);
+            t.vertexUV(x0, y1, z0, u1, v0);
+        }
+        if (face == 3) {
+            t.vertexUV(x1, y1, z1, u1, v0);
+            t.vertexUV(x1, y0, z1, u1, v1);
+            t.vertexUV(x0, y0, z1, u0, v1);
+            t.vertexUV(x0, y1, z1, u0, v0);
+        }
+        if (face == 4) {
+            t.vertexUV(x0, y0, z1, u1, v1);
+            t.vertexUV(x0, y0, z0, u0, v1);
+            t.vertexUV(x0, y1, z0, u0, v0);
+            t.vertexUV(x0, y1, z1, u1, v0);
+        }
+        if (face == 5) {
+            t.vertexUV(x1, y1, z1, u0, v0);
+            t.vertexUV(x1, y1, z0, u1, v0);
+            t.vertexUV(x1, y0, z0, u1, v1);
+            t.vertexUV(x1, y0, z1, u0, v1);
+        }
+    }
+
+    renderFaceNoTexture(t, x, y, z, face, nbmode = false) {
+        if (!nbmode) {
+            let brightness = 1.0;
+            if (face === 0) brightness = this.getBrightness(this.level, x, y - 1, z) * 0.5;
+            if (face === 1) brightness = this.getBrightness(this.level, x, y + 1, z) * 1.0;
+            if (face === 2) brightness = this.getBrightness(this.level, x, y, z - 1) * 0.8;
+            if (face === 3) brightness = this.getBrightness(this.level, x, y, z + 1) * 0.8;
+            if (face === 4) brightness = this.getBrightness(this.level, x - 1, y, z) * 0.6;
+            if (face === 5) brightness = this.getBrightness(this.level, x + 1, y, z) * 0.6;
+            t.color(brightness, brightness, brightness);
         }
 
-        if (!level.isSolidTile(x, y, z + 1)) {
-            br = level.getBrightness(x, y, z + 1) * c2;
-            if ((br === c2) ^ (layer === 1)) {
-                t.color(br, br, br);
-                this.addQuad(t,
-                    x0, y1, z1, u0, v0,
-                    x0, y0, z1, u0, v1,
-                    x1, y0, z1, u1, v1,
-                    x1, y1, z1, u1, v0
-                );
-            }
-        }
+        const x0 = x + this.xx0;
+        const x1 = x + this.xx1;
+        const y0 = y + this.yy0;
+        const y1 = y + this.yy1;
+        const z0 = z + this.zz0;
+        const z1 = z + this.zz1;
 
-        if (!level.isSolidTile(x - 1, y, z)) {
-            br = level.getBrightness(x - 1, y, z) * c3;
-            if ((br === c3) ^ (layer === 1)) {
-                t.color(br, br, br);
-                this.addQuad(t,
-                    x0, y1, z1, u1, v0,
-                    x0, y1, z0, u0, v0,
-                    x0, y0, z0, u0, v1,
-                    x0, y0, z1, u1, v1
-                );
-            }
+        if (face == 0) {
+            t.vertex(x0, y0, z1);
+            t.vertex(x0, y0, z0);
+            t.vertex(x1, y0, z0);
+            t.vertex(x1, y0, z1);
         }
-
-        if (!level.isSolidTile(x + 1, y, z)) {
-            br = level.getBrightness(x + 1, y, z) * c3;
-            if ((br === c3) ^ (layer === 1)) {
-                t.color(br, br, br);
-                this.addQuad(t,
-                    x1, y0, z1, u0, v1,
-                    x1, y0, z0, u1, v1,
-                    x1, y1, z0, u1, v0,
-                    x1, y1, z1, u0, v0
-                );
-            }
+        if (face == 1) {
+            t.vertex(x1, y1, z1);
+            t.vertex(x1, y1, z0);
+            t.vertex(x0, y1, z0);
+            t.vertex(x0, y1, z1);
+        }
+        if (face == 2) {
+            t.vertex(x0, y1, z0);
+            t.vertex(x1, y1, z0);
+            t.vertex(x1, y0, z0);
+            t.vertex(x0, y0, z0);
+        }
+        if (face == 3) {
+            t.vertex(x0, y1, z1);
+            t.vertex(x0, y0, z1);
+            t.vertex(x1, y0, z1);
+            t.vertex(x1, y1, z1);
+        }
+        if (face == 4) {
+            t.vertex(x0, y1, z1);
+            t.vertex(x0, y1, z0);
+            t.vertex(x0, y0, z0);
+            t.vertex(x0, y0, z1);
+        }
+        if (face == 5) {
+            t.vertex(x1, y0, z1);
+            t.vertex(x1, y0, z0);
+            t.vertex(x1, y1, z0);
+            t.vertex(x1, y1, z1);
         }
     }
 
@@ -6332,118 +7140,102 @@ export class Tile {
         t.tex(u3, v3); t.vertex(x3, y3, z3);
         t.tex(u4, v4); t.vertex(x4, y4, z4);
     }
-}
 
-
-
-
-
-
-
-
-
-export class Chunk {
-    static rebuiltThisFrame = 0;
-    static updates = 0;
-
-    constructor(level, x0, y0, z0, x1, y1, z1) {
-        this.level = level;
-        this.t = level.engine.t;
-        this.x0 = x0;
-        this.y0 = y0;
-        this.z0 = z0;
-        this.x1 = x1;
-        this.y1 = y1;
-        this.z1 = z1;
-
-        this.aabb = new AABB(x0, y0, z0, x1, y1, z1);
-        this.dirty = true;
-
-        this.texture = level.texture;
-        this.material = level.material;
-
-        this.meshes = [new THREE.Mesh(), new THREE.Mesh()];
-        this.meshes.forEach(m => {
-            m.frustumCulled = true;
-            //m.matrixAutoUpdate = false;
-            //m.updateMatrix();
-        });
+    shouldRenderFace(level, x, y, z, layer, face) {
+        if (layer === 1) return false;
+        return !level.isSolidTile(x, y, z);
     }
 
-    rebuild(layer) {
-        if (Chunk.rebuiltThisFrame >= 2) return;
+    getBrightness(level, x, y, z) {
+        return level.getBrightness(x, y, z);
+    }
 
-        this.dirty = false;
-        Chunk.updates++;
-        Chunk.rebuiltThisFrame++;
+    getTexture(face) {
+        return this.tex;
+    }
 
-        this.t.init();
+    getAABB(x, y, z) {
+        return new AABB(x, y, z, x + 1, y + 1, z + 1);
+    }
 
-        const grassLevel = (this.level.depth * 2) / 3;
+    blocksLight() {
+        return true;
+    }
 
-        for (let x = this.x0; x < this.x1; x++) {
-            for (let y = this.y0; y < this.y1; y++) {
-                for (let z = this.z0; z < this.z1; z++) {
-                    if (this.level.isTile(x, y, z)) {
-                        const isGrass = (y < grassLevel && y > grassLevel - 1);
-                        if (isGrass) {
-                            Tile.grass.render(this.t, this.level, layer, x, y, z);
-                        } else {
-                            Tile.rock.render(this.t, this.level, layer, x, y, z);
-                        }
-                    }
+    isSolid() {
+        return true;
+    }
+
+    mayPick() {
+        return true;
+    }
+
+    tick(level, x, y, z, random) { }
+
+    neighborChanged(level, x, y, z, type) { }
+
+    getLiquidType() {
+        return 0;
+    }
+
+    getTickDelay() {
+        return 0;
+    }
+
+    destroy(level, x, y, z, particleEngine) {
+        const SD = 4;
+        for (let xx = 0; xx < SD; xx++) {
+            for (let yy = 0; yy < SD; yy++) {
+                for (let zz = 0; zz < SD; zz++) {
+                    const xp = x + (xx + 0.5) / SD;
+                    const yp = y + (yy + 0.5) / SD;
+                    const zp = z + (zz + 0.5) / SD;
+
+                    particleEngine.add(
+                        xp, yp, zp,
+                        xp - x - 0.5, yp - y - 0.5, zp - z - 0.5,
+                        this.id
+                    );
                 }
             }
         }
+    }
+}
 
-        const newGeometry = this.t.createGeometry();
 
-        if (this.meshes[layer].geometry) {
-            this.meshes[layer].geometry.dispose();
-        }
+class GrassTile extends Tile {
+    constructor(id) {
+        super(id);
+        this.tex = 3;
+    }
 
-        if (newGeometry) {
-            newGeometry.computeBoundingBox();
-            newGeometry.computeBoundingSphere();
+    getTexture(face) {
+        if (face === 1) return 0;
+        if (face === 0) return 2;
+        return 3;
+    }
 
-            this.meshes[layer].geometry = newGeometry;
-            this.meshes[layer].material = this.material;
-            this.meshes[layer].visible = true;
+    tick(level, x, y, z, random) {
+        if (!level.isLit(x, y, z)) {
+            level.setTile(x, y, z, Tile.dirt.id);
         } else {
-            this.meshes[layer].geometry = new THREE.BufferGeometry();
-            this.meshes[layer].visible = false;
-        }
-    }
+            for (let i = 0; i < 4; i++) {
 
-    render(layer) {
-        if (this.dirty) {
-            this.rebuild(0);
-            this.rebuild(1);
-        }
+                const xt = x + random.nextInt(3) - 1;
+                const yt = y + random.nextInt(5) - 3;
+                const zt = z + random.nextInt(3) - 1;
 
-        const hasPositions = !!this.meshes[layer]?.geometry?.attributes?.position;
-        this.meshes[layer].visible = hasPositions;
-    }
-
-    setDirty() {
-        this.dirty = true;
-    }
-
-    destroy() {
-        for (let i = 0; i < 2; i++) {
-            if (this.meshes[i]) {
-                if (this.meshes[i].geometry) {
-                    this.meshes[i].geometry.dispose();
-                }
-                if (this.meshes[i].parent) {
-                    this.meshes[i].parent.remove(this.meshes[i]);
+                if (level.getTile(xt, yt, zt) === Tile.dirt.id && level.isLit(xt, yt, zt)) {
+                    level.setTile(xt, yt, zt, Tile.grass.id);
                 }
             }
         }
-        this.meshes = [];
     }
 }
 
+
+Tile.rock = new Tile(2, 1);
+Tile.grass = new GrassTile(1);
 
 
 
@@ -6758,7 +7550,7 @@ export class VoxWheel {
 
         this.listener = new THREE.AudioListener();
         // 0.1 25, 0.05 50, 0.025 100, 0.0125 200
-        this.camera = new THREE.PerspectiveCamera(this.config.data.FOV, this.canvas_renderer.POM, 0.025, 100.0);
+        this.camera = new THREE.PerspectiveCamera(this.config.data.FOV, this.canvas_renderer.POM, 0.025, 1000.0);
         this.scene = new THREE.Scene();
         //this.scene.fog = new THREE.FogExp2(this.fogColor, 0.025);
 
