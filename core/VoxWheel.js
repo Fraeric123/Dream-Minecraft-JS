@@ -6646,7 +6646,7 @@ export class LevelRenderer {
         }
 
         const cloudTexture = this.engine.asset_manager.get("clouds");
-        if (!cloudTexture || !cloudTexture.image) return;
+        if (!cloudTexture || !cloudTexture.image || !cloudTexture.image.width) return;
 
         const img = cloudTexture.image;
         const canvas = document.createElement("canvas");
@@ -6770,18 +6770,21 @@ export class LevelRenderer {
         cloudTexture.minFilter = THREE.NearestFilter;
         cloudTexture.wrapS = THREE.RepeatWrapping;
         cloudTexture.wrapT = THREE.RepeatWrapping;
+        cloudTexture.needsUpdate = true;
 
         const material = new THREE.MeshBasicMaterial({
             map: cloudTexture,
             transparent: true,
-            opacity: 0.8, // Přidána průhlednost, protože Tesselator alpha kanál nezpracovává
+            opacity: 0.8,
             alphaTest: 0.1,
             vertexColors: true,
-            side: THREE.DoubleSide
+            side: THREE.DoubleSide,
+            depthWrite: false // Oprava: Zabraňuje chybám s průhledností
         });
 
         this.cloudsMesh = new THREE.Mesh(geometry, material);
         this.cloudsMesh.renderOrder = -1;
+        this.cloudsMesh.frustumCulled = false; // Oprava: Mraky nikdy nemizí z dohledu
         if (this.scene) {
             this.scene.add(this.cloudsMesh);
         }
@@ -6820,15 +6823,19 @@ export class LevelRenderer {
         this.renderDistance = Math.max(1, chunks);
         const maxBlocks = (this.renderDistance * this.CHUNK_SIZE) - 16;
 
+        // Oprava: Zajistí, aby camera.far nezastřihla mraky, i když je render distance příliš malá
+        const minFar = (this.level.depth + 2) + 128; 
+        const finalFar = Math.max(maxBlocks, minFar);
+
         if (this.camera) {
-            this.camera.far = maxBlocks;
+            this.camera.far = finalFar;
             if (this.camera.updateProjectionMatrix) {
                 this.camera.updateProjectionMatrix();
             }
         }
 
         if (this.fog && this.fog.isFogExp2) {
-            this.fog.density = 2.0 / maxBlocks;
+            this.fog.density = 2.0 / finalFar;
         }
     }
 
@@ -7030,14 +7037,14 @@ export class LevelRenderer {
 export class Tesselator {
     static instance = new Tesselator();
 
-    constructor(maxVertices = 5000000) { // Zvýšen limit pro 3x3 mřížku mraků
+    constructor(maxVertices = 5000000) { 
         this.positions = new Float32Array(maxVertices * 3);
         this.uvs = new Float32Array(maxVertices * 2);
-        this.colors = new Float32Array(maxVertices * 3);
+        this.colors = new Float32Array(maxVertices * 4); // Oprava: Přidána podpora pro alfa kanál (RGBA)
 
         this.quadBufferPositions = new Float32Array(12);
         this.quadBufferUVs = new Float32Array(8);
-        this.quadBufferColors = new Float32Array(12);
+        this.quadBufferColors = new Float32Array(16); // Oprava: 4 vertexy * 4 komponenty (RGBA)
 
         this.quadVertexCount = 0;
         this.vertexCount = 0;
@@ -7127,12 +7134,13 @@ export class Tesselator {
 
     vertex(x, y, z) {
         if (this.isLines) {
-            this.addSingleVertex(x, y, z, this.u, this.v, this.r, this.g, this.b);
+            this.addSingleVertex(x, y, z, this.u, this.v, this.r, this.g, this.b, this.a);
             return;
         }
 
         const qIdx3 = this.quadVertexCount * 3;
         const qIdx2 = this.quadVertexCount * 2;
+        const qIdx4 = this.quadVertexCount * 4;
 
         this.quadBufferPositions[qIdx3] = x;
         this.quadBufferPositions[qIdx3 + 1] = y;
@@ -7141,9 +7149,10 @@ export class Tesselator {
         this.quadBufferUVs[qIdx2] = this.u;
         this.quadBufferUVs[qIdx2 + 1] = this.v;
 
-        this.quadBufferColors[qIdx3] = this.r;
-        this.quadBufferColors[qIdx3 + 1] = this.g;
-        this.quadBufferColors[qIdx3 + 2] = this.b;
+        this.quadBufferColors[qIdx4] = this.r;
+        this.quadBufferColors[qIdx4 + 1] = this.g;
+        this.quadBufferColors[qIdx4 + 2] = this.b;
+        this.quadBufferColors[qIdx4 + 3] = this.a; // Uložení alfa kanálu
 
         this.quadVertexCount++;
 
@@ -7157,18 +7166,20 @@ export class Tesselator {
                     this.quadBufferPositions[idx * 3 + 2],
                     this.quadBufferUVs[idx * 2],
                     this.quadBufferUVs[idx * 2 + 1],
-                    this.quadBufferColors[idx * 3],
-                    this.quadBufferColors[idx * 3 + 1],
-                    this.quadBufferColors[idx * 3 + 2]
+                    this.quadBufferColors[idx * 4],
+                    this.quadBufferColors[idx * 4 + 1],
+                    this.quadBufferColors[idx * 4 + 2],
+                    this.quadBufferColors[idx * 4 + 3]
                 );
             }
             this.quadVertexCount = 0;
         }
     }
 
-    addSingleVertex(x, y, z, u, v, r, g, b) {
+    addSingleVertex(x, y, z, u, v, r, g, b, a) {
         const vIdx3 = this.vertexCount * 3;
         const vIdx2 = this.vertexCount * 2;
+        const vIdx4 = this.vertexCount * 4;
 
         this.positions[vIdx3] = x;
         this.positions[vIdx3 + 1] = y;
@@ -7180,9 +7191,10 @@ export class Tesselator {
         }
 
         if (this.hasColor) {
-            this.colors[vIdx3] = r;
-            this.colors[vIdx3 + 1] = g;
-            this.colors[vIdx3 + 2] = b;
+            this.colors[vIdx4] = r;
+            this.colors[vIdx4 + 1] = g;
+            this.colors[vIdx4 + 2] = b;
+            this.colors[vIdx4 + 3] = a;
         }
 
         this.vertexCount++;
@@ -7200,7 +7212,7 @@ export class Tesselator {
         }
 
         if (this.hasColor) {
-            geometry.setAttribute('color', new THREE.BufferAttribute(this.colors.slice(0, this.vertexCount * 3), 3));
+            geometry.setAttribute('color', new THREE.BufferAttribute(this.colors.slice(0, this.vertexCount * 4), 4));
         }
 
         geometry.computeBoundingSphere();
