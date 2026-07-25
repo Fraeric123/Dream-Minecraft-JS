@@ -2144,17 +2144,15 @@ export class GUICrosshairElement extends GUIElement {
 
         ctx.globalCompositeOperation = 'difference';
         ctx.strokeStyle = this.color;
-        ctx.lineWidth = 6;
-
-        const offset = (6 % 2 !== 0) ? 0.5 : 0;
+        ctx.lineWidth = 4;
 
         ctx.beginPath();
 
-        ctx.moveTo(cx - 27 + offset, cy + offset);
-        ctx.lineTo(cx + 27 + offset, cy + offset);
+        ctx.moveTo(cx - 15, cy);
+        ctx.lineTo(cx + 15, cy);
 
-        ctx.moveTo(cx + offset, cy - 27 + offset);
-        ctx.lineTo(cx + offset, cy + 27 + offset);
+        ctx.moveTo(cx, cy - 15);
+        ctx.lineTo(cx, cy + 15);
 
         ctx.stroke();
         ctx.restore();
@@ -4049,6 +4047,10 @@ export class InGameScreen extends Screen {
         const canvasH = 1440;
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
+        const down = 1440;
+        const up = 0;
+        const left = 2560;
+        const right = 0;
 
         this.addCrosshair(centerX, centerY, 7, 0);
 
@@ -4065,6 +4067,8 @@ export class InGameScreen extends Screen {
 
         let currentY = 30 + menuY;
         const lineSpacing = 30;
+
+        const hotbar = this.addTextureSpritePanel("gui", centerX - 274.5, down - 66, 547, 66, [0, 0, 183, 22]);
 
         const addDebugLine = (label) => {
             const el = this.addBitmapText(label, menuX, currentY, textRotation, textSize, textColor, textShadow, textOpacity, isCentered);
@@ -5958,7 +5962,14 @@ export class Zombie extends Entity {
         this.zd *= groundFriction;
         this.yd *= 0.98;
 
-        if (this.y < -100.0) super.remove();
+        if (this.y < -100.0) this.resetPos();
+    }
+
+    resetPos() {
+        let x = Math.random() * this.level.width;
+        let y = this.level.depth + 10;
+        let z = Math.random() * this.level.height;
+        this.setPos(x, y, z);
     }
 
     render(a) {
@@ -6100,8 +6111,10 @@ export class Level {
 
         this.player = new Player(this);
 
-        for (let i = 0; i < 100; i++) {
-            this.entities.push(new Zombie(this, 128, 64, 128, this.engine.scene));
+        for (let i = 0; i < 30; i++) {
+            const zomb = new Zombie(this, 128, 64, 128, this.engine.scene);
+            zomb.resetPos();
+            this.entities.push(zomb);
         }
     }
 
@@ -6595,11 +6608,11 @@ export class Chunk {
     }
 }
 
-
 export class LevelRenderer {
     constructor(level, scene, camera = null) {
         this.CHUNK_SIZE = 16;
         this.level = level;
+        this.engine = this.level.engine;
         this.scene = scene;
         this.camera = camera;
         this.fog = scene.fog;
@@ -6609,6 +6622,8 @@ export class LevelRenderer {
         this.unloadDistanceOffset = 1;
 
         this.frustum = new Frustum();
+
+        this.cloudsTick = 0;
 
         this.chunkMap = new Map();
         this.loadedChunks = [];
@@ -6620,9 +6635,190 @@ export class LevelRenderer {
         level.addListener(this);
     }
 
+    init() {
+        this.compileClouds();
+    }
+
+    compileClouds() {
+        if (this.cloudsMesh) {
+            this.cloudsMesh.visible = true;
+            return;
+        }
+
+        const cloudTexture = this.engine.asset_manager.get("clouds");
+        if (!cloudTexture || !cloudTexture.image) return;
+
+        const img = cloudTexture.image;
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+        const imgData = ctx.getImageData(0, 0, img.width, img.height).data;
+
+        const t = Tesselator.instance;
+        t.init();
+
+        const cloudY = this.level.depth + 2;
+        const cloudHeight = 4.0;
+        const scale = 12.0;
+
+        const w = img.width;
+        const h = img.height;
+        this.cloudWidth = w * scale; 
+
+        const uScale = 1.0 / w;
+        const vScale = 1.0 / h;
+
+        const isCloud = (x, z) => {
+            const cx = ((x % w) + w) % w;
+            const cz = ((z % h) + h) % h;
+            const idx = (cz * w + cx) * 4;
+            return imgData[idx + 3] > 0;
+        };
+
+        const baseR = 1.0, baseG = 1.0, baseB = 1.0;
+        const zFightEpsilon = 0.0009765625;
+        const uvInset = 0.01 * uScale;
+
+        const startTile = -1;
+        const tiles = 3;
+
+        for (let tileX = startTile; tileX < startTile + tiles; tileX++) {
+            for (let tileZ = startTile; tileZ < startTile + tiles; tileZ++) {
+                for (let x = 0; x < w; x++) {
+                    for (let z = 0; z < h; z++) {
+                        if (!isCloud(x, z)) continue;
+
+                        const x0 = (tileX * w + x) * scale;
+                        const x1 = (tileX * w + x + 1) * scale;
+                        const z0 = (tileZ * h + z) * scale;
+                        const z1 = (tileZ * h + z + 1) * scale;
+
+                        const y0 = cloudY;
+                        const y1 = cloudY + cloudHeight - zFightEpsilon;
+
+                        const u0 = x * uScale + uvInset;
+                        const u1 = (x + 1) * uScale - uvInset;
+                        const v0 = z * vScale + uvInset;
+                        const v1 = (z + 1) * vScale - uvInset;
+
+                        const uCenter = (x + 0.5) * uScale;
+                        const vCenter = (z + 0.5) * vScale;
+
+                        // Spodní stěna
+                        t.setColorRGBA_F(baseR * 0.7, baseG * 0.7, baseB * 0.7, 0.8);
+                        if (t.setNormal) t.setNormal(0.0, -1.0, 0.0);
+                        t.vertexUV(x0, y0, z1, u0, v1);
+                        t.vertexUV(x1, y0, z1, u1, v1);
+                        t.vertexUV(x1, y0, z0, u1, v0);
+                        t.vertexUV(x0, y0, z0, u0, v0);
+
+                        // Horní stěna
+                        t.setColorRGBA_F(baseR, baseG, baseB, 0.8);
+                        if (t.setNormal) t.setNormal(0.0, 1.0, 0.0);
+                        t.vertexUV(x0, y1, z1, u0, v1);
+                        t.vertexUV(x1, y1, z1, u1, v1);
+                        t.vertexUV(x1, y1, z0, u1, v0);
+                        t.vertexUV(x0, y1, z0, u0, v0);
+
+                        // Boky
+                        if (!isCloud(x - 1, z)) {
+                            t.setColorRGBA_F(baseR * 0.9, baseG * 0.9, baseB * 0.9, 0.8);
+                            if (t.setNormal) t.setNormal(-1.0, 0.0, 0.0);
+                            t.vertexUV(x0, y0, z1, uCenter, vCenter);
+                            t.vertexUV(x0, y1, z1, uCenter, vCenter);
+                            t.vertexUV(x0, y1, z0, uCenter, vCenter);
+                            t.vertexUV(x0, y0, z0, uCenter, vCenter);
+                        }
+
+                        if (!isCloud(x + 1, z)) {
+                            t.setColorRGBA_F(baseR * 0.9, baseG * 0.9, baseB * 0.9, 0.8);
+                            if (t.setNormal) t.setNormal(1.0, 0.0, 0.0);
+                            t.vertexUV(x1, y0, z0, uCenter, vCenter);
+                            t.vertexUV(x1, y1, z0, uCenter, vCenter);
+                            t.vertexUV(x1, y1, z1, uCenter, vCenter);
+                            t.vertexUV(x1, y0, z1, uCenter, vCenter);
+                        }
+
+                        if (!isCloud(x, z - 1)) {
+                            t.setColorRGBA_F(baseR * 0.8, baseG * 0.8, baseB * 0.8, 0.8);
+                            if (t.setNormal) t.setNormal(0.0, 0.0, -1.0);
+                            t.vertexUV(x0, y1, z0, uCenter, vCenter);
+                            t.vertexUV(x1, y1, z0, uCenter, vCenter);
+                            t.vertexUV(x1, y0, z0, uCenter, vCenter);
+                            t.vertexUV(x0, y0, z0, uCenter, vCenter);
+                        }
+
+                        if (!isCloud(x, z + 1)) {
+                            t.setColorRGBA_F(baseR * 0.8, baseG * 0.8, baseB * 0.8, 0.8);
+                            if (t.setNormal) t.setNormal(0.0, 0.0, 1.0);
+                            t.vertexUV(x1, y1, z1, uCenter, vCenter);
+                            t.vertexUV(x0, y1, z1, uCenter, vCenter);
+                            t.vertexUV(x0, y0, z1, uCenter, vCenter);
+                            t.vertexUV(x1, y0, z1, uCenter, vCenter);
+                        }
+                    }
+                }
+            }
+        }
+
+        const geometry = t.flush();
+        if (!geometry) return;
+
+        cloudTexture.magFilter = THREE.NearestFilter;
+        cloudTexture.minFilter = THREE.NearestFilter;
+        cloudTexture.wrapS = THREE.RepeatWrapping;
+        cloudTexture.wrapT = THREE.RepeatWrapping;
+
+        const material = new THREE.MeshBasicMaterial({
+            map: cloudTexture,
+            transparent: true,
+            opacity: 0.8, // Přidána průhlednost, protože Tesselator alpha kanál nezpracovává
+            alphaTest: 0.1,
+            vertexColors: true,
+            side: THREE.DoubleSide
+        });
+
+        this.cloudsMesh = new THREE.Mesh(geometry, material);
+        this.cloudsMesh.renderOrder = -1;
+        if (this.scene) {
+            this.scene.add(this.cloudsMesh);
+        }
+    }
+
+    renderClouds(partialTick = 0) {
+        if (!this.cloudsMesh) {
+            this.compileClouds();
+        }
+        if (!this.cloudsMesh) return;
+
+        const tickTime = performance.now() / 50;
+        const cloudSpeed = 0.03;
+        const scale = 12;
+
+        if (this.cloudWidth && this.camera) {
+            const playerX = this.camera.position.x;
+            const playerZ = this.camera.position.z;
+            const cloudWidth = this.cloudWidth;
+
+            // Modulo offsetu chrání před ztrátou desetinné přesnosti při velmi dlouhém hraní
+            const cloudMoveOffset = ((tickTime + partialTick) * cloudSpeed * scale) % cloudWidth;
+
+            // Matematika pro plynulé nekonečné posouvání a udržení mraků u hráče
+            const modX = (((playerX + cloudMoveOffset) % cloudWidth) + cloudWidth) % cloudWidth;
+            const modZ = ((playerZ % cloudWidth) + cloudWidth) % cloudWidth;
+
+            this.cloudsMesh.position.x = playerX - modX;
+            this.cloudsMesh.position.z = playerZ - modZ;
+        }
+
+        this.cloudsMesh.visible = true;
+    }
+
     setRenderDistance(chunks) {
         this.renderDistance = Math.max(1, chunks);
-        const maxBlocks = (this.renderDistance * this.CHUNK_SIZE)-16;
+        const maxBlocks = (this.renderDistance * this.CHUNK_SIZE) - 16;
 
         if (this.camera) {
             this.camera.far = maxBlocks;
@@ -6730,7 +6926,7 @@ export class LevelRenderer {
         targets.sort((a, b) => a.distSqr - b.distSqr);
 
         let createdThisFrame = 0;
-        const maxCreatesPerFrame = 1;
+        const maxCreatesPerFrame = 10;
 
         for (const target of targets) {
             for (let cy = 0; cy < this.yChunks; cy++) {
@@ -6747,6 +6943,9 @@ export class LevelRenderer {
     }
 
     render(player, layer) {
+        if (layer == 0) {
+            this.renderClouds();
+        }
         const newRenderDistance = this.level.engine.config.data.RenderDistance;
         if (newRenderDistance !== this.renderDistance) {
             this.setRenderDistance(newRenderDistance);
@@ -6831,7 +7030,7 @@ export class LevelRenderer {
 export class Tesselator {
     static instance = new Tesselator();
 
-    constructor(maxVertices = 65536) {
+    constructor(maxVertices = 5000000) { // Zvýšen limit pro 3x3 mřížku mraků
         this.positions = new Float32Array(maxVertices * 3);
         this.uvs = new Float32Array(maxVertices * 2);
         this.colors = new Float32Array(maxVertices * 3);
@@ -6844,10 +7043,11 @@ export class Tesselator {
         this.vertexCount = 0;
 
         this.u = 0; this.v = 0;
-        this.r = 1; this.g = 1; this.b = 1;
+        this.r = 1; this.g = 1; this.b = 1; this.a = 1;
         this.hasColor = false;
         this.hasTexture = false;
         this.isLines = false;
+        this.isColorDisabled = false;
     }
 
     init(isLines = false) {
@@ -6856,30 +7056,68 @@ export class Tesselator {
         this.hasColor = false;
         this.hasTexture = false;
         this.isLines = isLines;
+        this.isColorDisabled = false;
+    }
+
+    // Opravené a deduplikované metody pro barvy
+    color(r, g, b, a = 1.0) {
+        if (this.isColorDisabled) return;
+        this.hasColor = true;
+        this.r = r;
+        this.g = g;
+        this.b = b;
+        this.a = a;
     }
 
     colorRGBA(c) {
         const r = ((c >> 16) & 0xFF) / 255.0;
         const g = ((c >> 8) & 0xFF) / 255.0;
         const b = (c & 0xFF) / 255.0;
-        this.color(r, g, b);
+        const a = (((c >> 24) & 0xFF) || 255) / 255.0;
+        this.color(r, g, b, a);
+    }
+
+    setColorRGBA_F(f, f1, f2, f3 = 1.0) {
+        this.setColorRGBA(
+            Math.floor(f * 255),
+            Math.floor(f1 * 255),
+            Math.floor(f2 * 255),
+            Math.floor(f3 * 255)
+        );
+    }
+
+    setColorOpaque_F(f, f1, f2) {
+        this.setColorRGBA_F(f, f1, f2, 1.0);
+    }
+
+    setColorOpaque(i, j, k) {
+        this.setColorRGBA(i, j, k, 255);
+    }
+
+    setColorRGBA(i, j, k, l = 255) {
+        if (this.isColorDisabled) return;
+
+        i = Math.max(0, Math.min(255, i));
+        j = Math.max(0, Math.min(255, j));
+        k = Math.max(0, Math.min(255, k));
+        l = Math.max(0, Math.min(255, l));
+
+        this.hasColor = true;
+        this.r = i / 255.0;
+        this.g = j / 255.0;
+        this.b = k / 255.0;
+        this.a = l / 255.0;
+    }
+
+    noColor() {
+        this.isColorDisabled = true;
+        this.hasColor = false;
     }
 
     tex(u, v) {
         this.hasTexture = true;
         this.u = u;
         this.v = v;
-    }
-
-    color(r, g, b) {
-        this.hasColor = true;
-        this.r = r;
-        this.g = g;
-        this.b = b;
-    }
-
-    noColor() {
-        this.noColor = true;
     }
 
     vertexUV(x, y, z, u, v) {
@@ -6970,7 +7208,6 @@ export class Tesselator {
         return geometry;
     }
 }
-
 
 
 
@@ -7342,8 +7579,10 @@ Tile.grass = new GrassTile(1);
 
 
 
-export class Player {
+export class Player extends Entity {
     constructor(level) {
+        super(level);
+
         this.level = level;
         this.engine = this.level.engine;
         this.input = this.engine.input;
@@ -7361,6 +7600,10 @@ export class Player {
 
         this.b1state = false;
         this.b2state = false;
+
+        this.speedBoost = 10;
+
+        this.walkSpeed = 0.1;
 
         this.event = this.engine.input_manager.mouseMoved.addEvent((pos) => {
             if (document.pointerLockElement) {
@@ -7486,6 +7729,13 @@ export class Player {
                 zomb.setPos(this.x, this.y, this.z);
                 this.level.entities.push(zomb);
             }
+
+            if (this.input.getInputState("KeyH")) {
+                this.level.entities[0].destroy();
+                this.level.entities.splice(0, 1);
+            }
+
+            if (this.y < -100.0) this.resetPos();
         }
 
         if (xa !== 0 || za !== 0) {
@@ -7504,7 +7754,7 @@ export class Player {
             if (moveDir.lengthSq() > 0) {
                 moveDir.normalize();
 
-                const speed = this.onGround ? 0.1 : 0.02;
+                const speed = this.onGround ? this.walkSpeed * this.speedBoost : this.walkSpeed * this.speedBoost / 5;
 
                 this.xd += moveDir.x * speed;
                 this.zd += moveDir.z * speed;
@@ -7657,7 +7907,7 @@ export class VoxWheel {
         this.input_manager = new InputManager(this);
 
         this.listener = new THREE.AudioListener();
-        
+
         this.camera = new THREE.PerspectiveCamera(this.config.data.FOV, this.canvas_renderer.POM, 0.025, 1000.0);
         this.scene = new THREE.Scene();
         this.scene.fog = new THREE.FogExp2(this.fogColor, 0.025);
@@ -7705,6 +7955,8 @@ export class VoxWheel {
 
         this.level = new Level(this, 256, 256, 64);
         this.levelRenderer = new LevelRenderer(this.level, this.scene);
+
+        this.levelRenderer.init();
 
         this.level.onGenerate.addEvent((progress) => {
             this.generateWorldScreen.onGenerate(progress);
@@ -7967,6 +8219,7 @@ const assets = new AssetList();
 assets.newAsset("pack", "../assets/textures/pack.png", Enum.AssetType.Texture);
 assets.newAsset("font", "../assets/fonts/default.gif", Enum.AssetType.Texture);
 assets.newAsset("terrain", "../assets/textures/terrain.png", Enum.AssetType.Texture);
+assets.newAsset("clouds", "../assets/textures/clouds.png", Enum.AssetType.Texture);
 assets.newAsset("steve", "../assets/textures/char.png", Enum.AssetType.Texture);
 assets.newAsset("pano0", "../assets/textures/pano/panorama0.png", Enum.AssetType.Texture);
 assets.newAsset("pano1", "../assets/textures/pano/panorama1.png", Enum.AssetType.Texture);
