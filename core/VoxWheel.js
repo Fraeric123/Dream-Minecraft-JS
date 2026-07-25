@@ -220,10 +220,10 @@ export const Enum = {
         "Fancy": 1
     },
     "RenderDistance": {
-        "Short": 0,
-        "Tiny": 1,
-        "Normal": 2,
-        "Far": 3
+        "Tiny": 2,
+        "Short": 4,
+        "Normal": 8,
+        "Far": 16
     },
     "Performance": {
         "PowerSaver": 0,
@@ -2128,44 +2128,33 @@ export class GUIColorPanelElement extends GUIElement {
 }
 
 
-export class GUICrosshair extends GUIElement {
-    constructor(screen, x = 0, y = 0, scale = 1, gap = 0) {
+export class GUICrosshairElement extends GUIElement {
+    constructor(screen, x = 0, y = 0, scale = 2, gap = 2, color = '#ffffff') {
         super(screen);
         this.x = x;
         this.y = y;
-        this.scale = scale;
-        this.gap = gap;
+
+        this.color = color;
     }
 
     render(ctx) {
-        const cx = this.x + 0.5;
-        const cy = this.y + 0.5;
-
-        const crosshairSize = 4 * this.scale;
-        const lineWidth = this.scale;
-
+        const cx = Math.floor(this.x);
+        const cy = Math.floor(this.y);
         ctx.save();
+
         ctx.globalCompositeOperation = 'difference';
         ctx.strokeStyle = this.color;
-        ctx.lineWidth = lineWidth;
+        ctx.lineWidth = 6;
+
+        const offset = (6 % 2 !== 0) ? 0.5 : 0;
 
         ctx.beginPath();
-        if (this.gap > 0) {
-            ctx.moveTo(cx - crosshairSize, cy);
-            ctx.lineTo(cx - this.gap, cy);
-            ctx.moveTo(cx + this.gap, cy);
-            ctx.lineTo(cx + crosshairSize, cy);
 
-            ctx.moveTo(cx, cy - crosshairSize);
-            ctx.lineTo(cx, cy - this.gap);
-            ctx.moveTo(cx, cy + this.gap);
-            ctx.lineTo(cx, cy + crosshairSize);
-        } else {
-            ctx.moveTo(cx - crosshairSize, cy);
-            ctx.lineTo(cx + crosshairSize, cy);
-            ctx.moveTo(cx, cy - crosshairSize);
-            ctx.lineTo(cx, cy + crosshairSize);
-        }
+        ctx.moveTo(cx - 27 + offset, cy + offset);
+        ctx.lineTo(cx + 27 + offset, cy + offset);
+
+        ctx.moveTo(cx + offset, cy - 27 + offset);
+        ctx.lineTo(cx + offset, cy + 27 + offset);
 
         ctx.stroke();
         ctx.restore();
@@ -3025,6 +3014,7 @@ export class Page {
 
     addBlurPanel(intensity, x, y, width, height, rotation, opacity) { return this.addElement(new GUIBlurPanelElement(this.screen, intensity, x, y, width, height, rotation, opacity)) };
     addColorPanel(color, x, y, width, height, rotation, opacity) { return this.addElement(new GUIColorPanelElement(this.screen, color, x, y, width, height, rotation, opacity)) };
+    addCrosshair(x, y, scale, gap) { return this.addElement(new GUICrosshairElement(this.screen, x, y, scale, gap)) };
     addTexturePanel(textureID, x, y, width, height, rotation, opacity) { return this.addElement(new GUITexturePanelElement(this.screen, textureID, x, y, width, height, rotation, opacity)) };
     addImagePanel(image, x, y, width, height, rotation, opacity) { return this.addElement(new GUIImagePanelElement(this.screen, image, x, y, width, height, rotation, opacity)) };
     addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.addElement(new GUITiledImagePanelElement(this.screen, image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
@@ -3097,6 +3087,7 @@ export class Screen {
     /*
     addBlurPanel(...args) { return this.getPage().addBlurPanel(...args); }
     addColorPanel(...args) { return this.getPage().addColorPanel(...args); }
+    addCrosshair(...args) { return this.getPage().addCrosshair(...args); }
     addTexturePanel(...args) { return this.getPage().addTexturePanel(...args); }
     addImagePanel(...args) { return this.getPage().addImagePanel(...args); }
     addTiledImagePanel(...args) { return this.getPage().addTiledImagePanel(...args); }
@@ -3111,6 +3102,7 @@ export class Screen {
 
     addBlurPanel(intensity, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUIBlurPanelElement(this, intensity, x, y, width, height, rotation, opacity)) };
     addColorPanel(color, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUIColorPanelElement(this, color, x, y, width, height, rotation, opacity)) };
+    addCrosshair(x, y, scale, gap) { return this.getPage().addElement(new GUICrosshairElement(this, x, y, scale, gap)) };
     addTexturePanel(textureID, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUITexturePanelElement(this, textureID, x, y, width, height, rotation, opacity)) };
     addImagePanel(image, x, y, width, height, rotation, opacity) { return this.getPage().addElement(new GUIImagePanelElement(this, image, x, y, width, height, rotation, opacity)) };
     addTiledImagePanel(image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation) { return this.getPage().addElement(new GUITiledImagePanelElement(this, image, x, y, width, height, tileSize, rotation, opacity, patternOffsetX, patternOffsetY, patternRotation)) };
@@ -4057,6 +4049,8 @@ export class InGameScreen extends Screen {
         const canvasH = 1440;
         const centerX = canvasW / 2;
         const centerY = canvasH / 2;
+
+        this.addCrosshair(centerX, centerY, 7, 0);
 
         this.addBitmapText("Alpha Test Build no." + build, 185, 30, 0, 3, 0xFFFFFF, true, 1, true);
 
@@ -5816,6 +5810,13 @@ export class Entity {
     setLevel(level) {
         this.level = level;
     }
+
+    distanceToSqr(player) {
+        const xd = player.x - this.x;
+        const yd = player.y - this.y;
+        const zd = player.z - this.z;
+        return xd * xd + yd * yd + zd * zd;
+    }
 }
 
 
@@ -6152,7 +6153,19 @@ export class Level {
         this.engine.levelRenderer.render(this.player, 0);
         this.engine.levelRenderer.render(this.player, 1);
 
-        this.entities.forEach(z => z.render(this.engine.timer.a));
+        const levelRenderer = this.engine.levelRenderer;
+        const maxDistanceBlocks = levelRenderer.renderDistance * levelRenderer.CHUNK_SIZE;
+        const maxDistanceSqr = maxDistanceBlocks * maxDistanceBlocks;
+
+        this.entities.forEach(entity => {
+            if (entity.distanceToSqr(this.player) > maxDistanceSqr) {
+                if (entity.group) entity.group.visible = false;
+                return;
+            }
+
+            if (entity.group) entity.group.visible = true;
+            entity.render(this.engine.timer.a);
+        });
     }
 
     moveCameraToPlayer() {
@@ -6594,115 +6607,206 @@ export class Chunk {
 
 
 export class LevelRenderer {
-    constructor(level, scene) {
+    constructor(level, scene, camera = null) {
         this.CHUNK_SIZE = 16;
         this.level = level;
         this.scene = scene;
+        this.camera = camera;
+        this.fog = scene.fog;
         this.t = level.engine.t;
 
-        this.renderDistanceChunks = 8;
+        this.renderDistance = 8;
+        this.unloadDistanceOffset = 1;
 
         this.frustum = new Frustum();
+
+        this.chunkMap = new Map();
+        this.loadedChunks = [];
 
         this.xChunks = Math.ceil(level.width / this.CHUNK_SIZE);
         this.yChunks = Math.ceil(level.depth / this.CHUNK_SIZE);
         this.zChunks = Math.ceil(level.height / this.CHUNK_SIZE);
 
-        this.chunks = new Array(this.xChunks * this.yChunks * this.zChunks);
+        level.addListener(this);
+    }
 
-        for (let x = 0; x < this.xChunks; x++) {
-            for (let y = 0; y < this.yChunks; y++) {
-                for (let z = 0; z < this.zChunks; z++) {
-                    let x0 = x * this.CHUNK_SIZE;
-                    let y0 = y * this.CHUNK_SIZE;
-                    let z0 = z * this.CHUNK_SIZE;
-                    let x1 = Math.min((x + 1) * this.CHUNK_SIZE, level.width);
-                    let y1 = Math.min((y + 1) * this.CHUNK_SIZE, level.depth);
-                    let z1 = Math.min((z + 1) * this.CHUNK_SIZE, level.height);
+    setRenderDistance(chunks) {
+        this.renderDistance = Math.max(1, chunks);
+        const maxBlocks = this.renderDistance * this.CHUNK_SIZE;
 
-                    const chunkIndex = (x + y * this.xChunks) * this.zChunks + z;
-                    const newChunk = new Chunk(level, x0, y0, z0, x1, y1, z1);
-                    this.chunks[chunkIndex] = newChunk;
-
-                    this.scene.add(newChunk.meshes[0]);
-                    this.scene.add(newChunk.meshes[1]);
-                }
+        if (this.camera) {
+            this.camera.far = maxBlocks + 64;
+            if (this.camera.updateProjectionMatrix) {
+                this.camera.updateProjectionMatrix();
             }
         }
 
-        level.addListener(this);
+        if (this.fog && this.fog.isFogExp2) {
+            this.fog.density = 2.0 / maxBlocks;
+        }
     }
 
     updateFrustum(camera) {
         if (!camera) return;
-        if (camera.updateMatrixWorld) camera.updateMatrixWorld();
+
+        if (this.camera !== camera) {
+            this.camera = camera;
+            this.setRenderDistance(this.renderDistance);
+        } else {
+            if (camera.updateMatrixWorld) camera.updateMatrixWorld();
+        }
+
         this.frustum = Frustum.getFrustum(
             camera.projectionMatrix.elements,
             camera.matrixWorldInverse.elements
         );
     }
 
+    getChunkKey(cx, cy, cz) {
+        return `${cx},${cy},${cz}`;
+    }
+
+    createChunk(cx, cy, cz) {
+        let x0 = cx * this.CHUNK_SIZE;
+        let y0 = cy * this.CHUNK_SIZE;
+        let z0 = cz * this.CHUNK_SIZE;
+        let x1 = Math.min((cx + 1) * this.CHUNK_SIZE, this.level.width);
+        let y1 = Math.min((cy + 1) * this.CHUNK_SIZE, this.level.depth);
+        let z1 = Math.min((cz + 1) * this.CHUNK_SIZE, this.level.height);
+
+        const chunk = new Chunk(this.level, x0, y0, z0, x1, y1, z1);
+        const key = this.getChunkKey(cx, cy, cz);
+
+        this.chunkMap.set(key, chunk);
+        this.loadedChunks.push(chunk);
+
+        if (chunk.meshes[0]) this.scene.add(chunk.meshes[0]);
+        if (chunk.meshes[1]) this.scene.add(chunk.meshes[1]);
+
+        chunk.setDirty();
+
+        return chunk;
+    }
+
+    destroyChunk(key, chunk) {
+        if (chunk.meshes[0]) this.scene.remove(chunk.meshes[0]);
+        if (chunk.meshes[1]) this.scene.remove(chunk.meshes[1]);
+
+        if (typeof chunk.destroy === 'function') {
+            chunk.destroy();
+        }
+
+        this.chunkMap.delete(key);
+        const index = this.loadedChunks.indexOf(chunk);
+        if (index !== -1) {
+            this.loadedChunks.splice(index, 1);
+        }
+    }
+
+    updateChunks(player) {
+        const pCx = Math.floor(player.x / this.CHUNK_SIZE);
+        const pCz = Math.floor(player.z / this.CHUNK_SIZE);
+
+        const loadDist = this.renderDistance;
+        const unloadDistSqr = Math.pow(loadDist + this.unloadDistanceOffset, 2);
+
+        for (const [key, chunk] of this.chunkMap.entries()) {
+            const cx = Math.floor(chunk.x0 / this.CHUNK_SIZE);
+            const cz = Math.floor(chunk.z0 / this.CHUNK_SIZE);
+
+            const dx = cx - pCx;
+            const dz = cz - pCz;
+
+            if ((dx * dx + dz * dz) > unloadDistSqr) {
+                this.destroyChunk(key, chunk);
+            }
+        }
+
+        const targets = [];
+        for (let dx = -loadDist; dx <= loadDist; dx++) {
+            for (let dz = -loadDist; dz <= loadDist; dz++) {
+                const distSqr = dx * dx + dz * dz;
+                if (distSqr <= loadDist * loadDist) {
+                    const cx = pCx + dx;
+                    const cz = pCz + dz;
+
+                    if (cx >= 0 && cx < this.xChunks && cz >= 0 && cz < this.zChunks) {
+                        targets.push({ cx, cz, distSqr });
+                    }
+                }
+            }
+        }
+
+        targets.sort((a, b) => a.distSqr - b.distSqr);
+
+        let createdThisFrame = 0;
+        const maxCreatesPerFrame = 1;
+
+        for (const target of targets) {
+            for (let cy = 0; cy < this.yChunks; cy++) {
+                const key = this.getChunkKey(target.cx, cy, target.cz);
+                if (!this.chunkMap.has(key)) {
+                    this.createChunk(target.cx, cy, target.cz);
+                    createdThisFrame++;
+                    if (createdThisFrame >= maxCreatesPerFrame) {
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     render(player, layer) {
+        const newRenderDistance = this.level.engine.config.data.RenderDistance;
+        if (newRenderDistance !== this.renderDistance) {
+            this.setRenderDistance(newRenderDistance);
+        }
+
         Chunk.rebuiltThisFrame = 0;
 
-        const xd = player.x - this.lX;
-        const yd = player.y - this.lY;
-        const zd = player.z - this.lZ;
+        if (layer === 0) {
+            this.updateChunks(player);
 
-        if ((xd * xd + yd * yd + zd * zd) > 64.0) {
-            this.lX = player.x;
-            this.lY = player.y;
-            this.lZ = player.z;
-
-            this.chunks.sort((chunkA, chunkB) => {
+            this.loadedChunks.sort((chunkA, chunkB) => {
                 return chunkA.distanceToSqr(player) - chunkB.distanceToSqr(player);
             });
         }
 
-        const maxDistanceBlocks = this.renderDistanceChunks * this.CHUNK_SIZE;
-        const maxDistanceSqr = maxDistanceBlocks * maxDistanceBlocks;
-
         const frustum = this.frustum;
         const hasFrustum = !!frustum;
 
-        this.chunks.forEach(chunk => {
+        for (let i = 0; i < this.loadedChunks.length; i++) {
+            const chunk = this.loadedChunks[i];
+
             if (hasFrustum && !frustum.isVisible(chunk.aabb)) {
                 chunk.visible = false;
-                chunk.meshes[layer].visible = false;
-                return;
-            }
-
-            if (this.drawDistance !== 0 && chunk.distanceToSqr(player) >= maxDistanceSqr) {
-                chunk.visible = false;
-                chunk.meshes[layer].visible = false;
-                return;
+                if (chunk.meshes[layer]) chunk.meshes[layer].visible = false;
+                continue;
             }
 
             chunk.visible = true;
+            if (chunk.meshes[layer]) chunk.meshes[layer].visible = true;
+
             chunk.render(layer);
-        });
+        }
     }
 
     setDirty(x0, y0, z0, x1, y1, z1) {
-        x0 = Math.floor((x0 - 1) / this.CHUNK_SIZE);
-        x1 = Math.floor((x1 + 1) / this.CHUNK_SIZE);
-        y0 = Math.floor((y0 - 1) / this.CHUNK_SIZE);
-        y1 = Math.floor((y1 + 1) / this.CHUNK_SIZE);
-        z0 = Math.floor((z0 - 1) / this.CHUNK_SIZE);
-        z1 = Math.floor((z1 + 1) / this.CHUNK_SIZE);
+        let cx0 = Math.floor(x0 / this.CHUNK_SIZE);
+        let cx1 = Math.floor(x1 / this.CHUNK_SIZE);
+        let cy0 = Math.floor(y0 / this.CHUNK_SIZE);
+        let cy1 = Math.floor(y1 / this.CHUNK_SIZE);
+        let cz0 = Math.floor(z0 / this.CHUNK_SIZE);
+        let cz1 = Math.floor(z1 / this.CHUNK_SIZE);
 
-        x0 = Math.max(0, x0);
-        y0 = Math.max(0, y0);
-        z0 = Math.max(0, z0);
-        x1 = Math.min(this.xChunks - 1, x1);
-        y1 = Math.min(this.yChunks - 1, y1);
-        z1 = Math.min(this.zChunks - 1, z1);
-
-        for (let x = x0; x <= x1; x++) {
-            for (let y = y0; y <= y1; y++) {
-                for (let z = z0; z <= z1; z++) {
-                    const index = (x + y * this.xChunks) * this.zChunks + z;
-                    this.chunks[index].setDirty();
+        for (let x = cx0; x <= cx1; x++) {
+            for (let y = cy0; y <= cy1; y++) {
+                for (let z = cz0; z <= cz1; z++) {
+                    const key = this.getChunkKey(x, y, z);
+                    const chunk = this.chunkMap.get(key);
+                    if (chunk) {
+                        chunk.setDirty();
+                    }
                 }
             }
         }
@@ -6717,15 +6821,19 @@ export class LevelRenderer {
     }
 
     allChanged() {
-        this.setDirty(0, 0, 0, this.level.width, this.level.depth, this.level.height);
+        for (const chunk of this.chunkMap.values()) {
+            chunk.setDirty();
+        }
     }
 
     destroy() {
-        for (let chunk of this.chunks) {
-            if (chunk) chunk.destroy();
+        for (const [key, chunk] of this.chunkMap.entries()) {
+            this.destroyChunk(key, chunk);
         }
-        this.chunks = [];
+        this.chunkMap.clear();
+        this.loadedChunks = [];
         this.t = null;
+        this.camera = null;
     }
 }
 
@@ -7277,6 +7385,16 @@ export class Player {
                 );
             }
         });
+        this.event2 = this.engine.input_manager.keyDown.addEvent((key) => {
+            if (document.pointerLockElement && key == "KeyF") {
+                switch (this.engine.config.data.RenderDistance) {
+                    case Enum.RenderDistance.Tiny: this.engine.config.data.RenderDistance = Enum.RenderDistance.Short; break;
+                    case Enum.RenderDistance.Short: this.engine.config.data.RenderDistance = Enum.RenderDistance.Normal; break;
+                    case Enum.RenderDistance.Normal: this.engine.config.data.RenderDistance = Enum.RenderDistance.Far; break;
+                    case Enum.RenderDistance.Far: this.engine.config.data.RenderDistance = Enum.RenderDistance.Tiny; break;
+                }
+            }
+        });
 
         this.resetPos();
     }
@@ -7552,7 +7670,7 @@ export class VoxWheel {
         // 0.1 25, 0.05 50, 0.025 100, 0.0125 200
         this.camera = new THREE.PerspectiveCamera(this.config.data.FOV, this.canvas_renderer.POM, 0.025, 1000.0);
         this.scene = new THREE.Scene();
-        //this.scene.fog = new THREE.FogExp2(this.fogColor, 0.025);
+        this.scene.fog = new THREE.FogExp2(this.fogColor, 0.025);
 
         this.camera.add(this.listener);
         this.scene.add(this.camera);
