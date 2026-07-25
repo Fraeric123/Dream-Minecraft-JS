@@ -2,7 +2,7 @@
 
 
 
-const build = 38;
+const build = 39;
 
 
 
@@ -6153,17 +6153,7 @@ export class Level {
         this.engine.levelRenderer.render(this.player, 0);
         this.engine.levelRenderer.render(this.player, 1);
 
-        const levelRenderer = this.engine.levelRenderer;
-        const maxDistanceBlocks = levelRenderer.renderDistance * levelRenderer.CHUNK_SIZE;
-        const maxDistanceSqr = maxDistanceBlocks * maxDistanceBlocks;
-
         this.entities.forEach(entity => {
-            if (entity.distanceToSqr(this.player) > maxDistanceSqr) {
-                if (entity.group) entity.group.visible = false;
-                return;
-            }
-
-            if (entity.group) entity.group.visible = true;
             entity.render(this.engine.timer.a);
         });
     }
@@ -6632,10 +6622,10 @@ export class LevelRenderer {
 
     setRenderDistance(chunks) {
         this.renderDistance = Math.max(1, chunks);
-        const maxBlocks = this.renderDistance * this.CHUNK_SIZE;
+        const maxBlocks = (this.renderDistance * this.CHUNK_SIZE)-16;
 
         if (this.camera) {
-            this.camera.far = maxBlocks + 64;
+            this.camera.far = maxBlocks;
             if (this.camera.updateProjectionMatrix) {
                 this.camera.updateProjectionMatrix();
             }
@@ -7667,7 +7657,7 @@ export class VoxWheel {
         this.input_manager = new InputManager(this);
 
         this.listener = new THREE.AudioListener();
-        // 0.1 25, 0.05 50, 0.025 100, 0.0125 200
+        
         this.camera = new THREE.PerspectiveCamera(this.config.data.FOV, this.canvas_renderer.POM, 0.025, 1000.0);
         this.scene = new THREE.Scene();
         this.scene.fog = new THREE.FogExp2(this.fogColor, 0.025);
