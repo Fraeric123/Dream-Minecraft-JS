@@ -6675,7 +6675,7 @@ export class LevelRenderer {
 
         const scale = 12.0;
         const cloudThickness = 4.0;
-        const cloudY = this.level.depth + 2;
+        const cloudY = this.level.depth + 50;
         const zFightEpsilon = 0.0009765625;
 
         this.cloudWidth = w * scale;
@@ -6807,11 +6807,18 @@ export class LevelRenderer {
         depthMesh.frustumCulled = false;
         colorMesh.frustumCulled = false;
 
-        this.cloudsMesh = new THREE.Group();
-        this.cloudsMesh.add(depthMesh);
-        this.cloudsMesh.add(colorMesh);
+        const baseCloud = new THREE.Group();
+        baseCloud.add(depthMesh);
+        baseCloud.add(colorMesh);
 
-        this.cloudsMesh.position.set(-this.cloudWidth / 2, 0, -this.cloudHeight / 2);
+        this.cloudsMesh = new THREE.Group();
+        for (let ox = 0; ox < 2; ox++) {
+            for (let oz = 0; oz < 2; oz++) {
+                const tile = baseCloud.clone();
+                tile.position.set(ox * this.cloudWidth, 0, oz * this.cloudHeight);
+                this.cloudsMesh.add(tile);
+            }
+        }
 
         this.cloudsGroup = new THREE.Group();
         this.cloudsGroup.add(this.cloudsMesh);
@@ -6825,15 +6832,20 @@ export class LevelRenderer {
         if (!this.cloudsMesh) {
             this.compileClouds();
         }
-        if (!this.cloudsMesh || !this.cloudsMesh.material || !this.cloudsMesh.material.map) return;
+        if (!this.cloudsMesh || !this.cloudWidth) return;
 
-        const f2 = 4.8828125E-4;
-        const scale = 12.0;
-        const tickTime = performance.now() / 0.0058;
+        const tickTime = performance.now() / 1000;
+        const speed = 5.0;
+        const scrollX = (tickTime * speed) % this.cloudWidth;
 
-        const scrollX = ((tickTime + partialTick) * f2 * 3 * scale) % this.cloudWidth;
+        const camX = this.engine?.camera?.position?.x || 0;
+        const camZ = this.engine?.camera?.position?.z || 0;
 
-        this.cloudsMesh.position.x = -this.cloudWidth / 2 + scrollX;
+        const baseX = Math.floor(camX / this.cloudWidth) * this.cloudWidth - this.cloudWidth;
+        const baseZ = Math.floor(camZ / this.cloudHeight) * this.cloudHeight - this.cloudHeight;
+
+        this.cloudsMesh.position.x = baseX + scrollX;
+        this.cloudsMesh.position.z = baseZ;
         this.cloudsMesh.visible = true;
     }
 
@@ -7878,7 +7890,7 @@ export class Inventory {
         this.slots[4] = 5;
         this.slots[5] = 6;
         this.slots[6] = 7;
-        this.slots[7] = 8; 
+        this.slots[7] = 8;
         this.slots[8] = 9;
     }
 
