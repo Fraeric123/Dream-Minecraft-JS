@@ -3260,6 +3260,15 @@ export class MenuScreen extends Screen {
 
         this.splashText = this.addBitmapText(this.splashTextStr, centerX + 330, 237, -10, 5, 0xFFFF00, true, 1, true);
 
+        const hotbarX = 800;
+        const hotbarY = 800;
+
+        //this.hotbar = this.addTextureSpritePanel("gui", centerX - 183*3/2, down - 22*3, 183*3, 22*3, [0, 0, 183, 22]);
+        //this.hotbarSelector = this.addTextureSpritePanel("gui", centerX - 183*3/2, down - selW, selW, selW, [0, 22, 24, 24]);
+        //this.hotbarSelectorPositions = [0, (selW + slotOffset), (selW + slotOffset)*2, (selW + slotOffset)*3, (selW + slotOffset)*4, (selW + slotOffset)*5, (selW + slotOffset)*6, (selW + slotOffset)*7, (selW + slotOffset)*8];
+        //this.hotbarSelectorStartX = this.hotbarSelector.x;
+        this.sele = 0;
+
         this.addBitmapText("by Fraeric123", left - 225, down - 30, 0, 3);
         this.addBitmapText("Alpha Test Build no." + build, 10, down - 60, 0, 3);
         this.addBitmapText("not Minecraft 1.0.0", 10, down - 30, 0, 3);
@@ -3284,6 +3293,10 @@ export class MenuScreen extends Screen {
     render(ctx) {
         this.blur.visible = this.engine.config.data.BlurEffects;
         this.blur.intensity = this.engine.config.data.BlurIntensity;
+
+        //this.hotbarSelector.x = this.hotbarSelectorStartX + this.hotbarSelectorPositions[this.sele.toFixed()];
+        //this.sele += 0.01;
+        if (this.sele > 8.5) this.sele = 0
 
         const speedFactor = (this.engine.config.data.MenuSpinSpeed ?? 100) / 100;
         const rotX = (Math.sin((this.engine.ms() / 10 / 400) * speedFactor) * 25 + 20) * deg2rad;
@@ -4068,7 +4081,10 @@ export class InGameScreen extends Screen {
         let currentY = 30 + menuY;
         const lineSpacing = 30;
 
-        const hotbar = this.addTextureSpritePanel("gui", centerX - 274.5, down - 66, 547, 66, [0, 0, 183, 22]);
+        this.hotbar = this.addTextureSpritePanel("gui", centerX - 274.5, down - 66, 547, 66, [0, 0, 183, 22]);
+        this.hotbarSelector = this.addTextureSpritePanel("gui", centerX - 274.5, down - 66, 66, 66, [0, 22, 24, 24]);
+        this.hotbarSelectorPositions = [0, 66, 132, 132, 132, 132, 132, 132, 132];
+        this.hotbarSelectorStartX = centerX - 274.5;
 
         const addDebugLine = (label) => {
             const el = this.addBitmapText(label, menuX, currentY, textRotation, textSize, textColor, textShadow, textOpacity, isCentered);
@@ -4154,6 +4170,8 @@ export class InGameScreen extends Screen {
             this.frameCount = 0;
             this.lastFpsUpdate = now;
         }
+
+        this.hotbarSelector.x = this.hotbarSelectorStartX + this.hotbarSelectorPositions[this.engine.level.inventory.selected];
 
         if (this.engine.renderer && this.engine.renderer.info) {
             const memory = this.engine.renderer.info.memory;
@@ -6037,6 +6055,7 @@ export class Level {
 
         this.camera = null;
         this.player = null;
+        this.inventory = null;
         this.entities = [];
 
         this.pause = false;
@@ -6110,6 +6129,7 @@ export class Level {
         }
 
         this.player = new Player(this);
+        this.inventory = new Inventory(this);
 
         for (let i = 0; i < 30; i++) {
             const zomb = new Zombie(this, 128, 64, 128, this.engine.scene);
@@ -6608,6 +6628,7 @@ export class Chunk {
     }
 }
 
+
 export class LevelRenderer {
     constructor(level, scene, camera = null) {
         this.CHUNK_SIZE = 16;
@@ -6649,116 +6670,104 @@ export class LevelRenderer {
         if (!cloudTexture || !cloudTexture.image || !cloudTexture.image.width) return;
 
         const img = cloudTexture.image;
-        const canvas = document.createElement("canvas");
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-        const imgData = ctx.getImageData(0, 0, img.width, img.height).data;
-
-        const t = Tesselator.instance;
-        t.init();
-
-        const cloudY = this.level.depth + 2;
-        const cloudHeight = 4.0;
-        const scale = 12.0;
-
         const w = img.width;
         const h = img.height;
-        this.cloudWidth = w * scale; 
+
+        const scale = 12.0;
+        const cloudThickness = 4.0;
+        const cloudY = this.level.depth + 2;
+        const zFightEpsilon = 0.0009765625;
+
+        this.cloudWidth = w * scale;
+        this.cloudHeight = h * scale;
 
         const uScale = 1.0 / w;
         const vScale = 1.0 / h;
 
-        const isCloud = (x, z) => {
-            const cx = ((x % w) + w) % w;
-            const cz = ((z % h) + h) % h;
-            const idx = (cz * w + cx) * 4;
-            return imgData[idx + 3] > 0;
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, w, h);
+        const pixelData = ctx.getImageData(0, 0, w, h).data;
+
+        const opacity = new Uint8Array(w * h);
+        for (let i = 0; i < w * h; i++) {
+            opacity[i] = pixelData[i * 4 + 3] > 127 ? 1 : 0;
+        }
+
+        const isOpaque = (x, z) => {
+            const wx = ((x % w) + w) % w;
+            const wz = ((z % h) + h) % h;
+            return opacity[wz * w + wx] === 1;
         };
 
-        const baseR = 1.0, baseG = 1.0, baseB = 1.0;
-        const zFightEpsilon = 0.0009765625;
-        const uvInset = 0.01 * uScale;
+        const t = Tesselator.instance;
+        t.init();
 
-        const startTile = -1;
-        const tiles = 3;
+        const y0 = cloudY;
+        const y1 = cloudY + cloudThickness - zFightEpsilon;
 
-        for (let tileX = startTile; tileX < startTile + tiles; tileX++) {
-            for (let tileZ = startTile; tileZ < startTile + tiles; tileZ++) {
-                for (let x = 0; x < w; x++) {
-                    for (let z = 0; z < h; z++) {
-                        if (!isCloud(x, z)) continue;
+        for (let zi = 0; zi < h; zi++) {
+            const za = zi * scale;
+            const zb = (zi + 1) * scale - zFightEpsilon;
+            const vCenter = (zi + 0.5) * vScale;
 
-                        const x0 = (tileX * w + x) * scale;
-                        const x1 = (tileX * w + x + 1) * scale;
-                        const z0 = (tileZ * h + z) * scale;
-                        const z1 = (tileZ * h + z + 1) * scale;
+            for (let xi = 0; xi < w; xi++) {
+                if (!isOpaque(xi, zi)) continue;
 
-                        const y0 = cloudY;
-                        const y1 = cloudY + cloudHeight - zFightEpsilon;
+                const uCenter = (xi + 0.5) * uScale;
+                const xa = xi * scale;
+                const xb = (xi + 1) * scale - zFightEpsilon;
 
-                        const u0 = x * uScale + uvInset;
-                        const u1 = (x + 1) * uScale - uvInset;
-                        const v0 = z * vScale + uvInset;
-                        const v1 = (z + 1) * vScale - uvInset;
+                t.setColorRGBA_F(0.7, 0.7, 0.7, 0.8);
+                if (t.setNormal) t.setNormal(0.0, -1.0, 0.0);
+                t.vertexUV(xa, y0, za, uCenter, vCenter);
+                t.vertexUV(xb, y0, za, uCenter, vCenter);
+                t.vertexUV(xb, y0, zb, uCenter, vCenter);
+                t.vertexUV(xa, y0, zb, uCenter, vCenter);
 
-                        const uCenter = (x + 0.5) * uScale;
-                        const vCenter = (z + 0.5) * vScale;
+                t.setColorRGBA_F(1.0, 1.0, 1.0, 0.8);
+                if (t.setNormal) t.setNormal(0.0, 1.0, 0.0);
+                t.vertexUV(xa, y1, zb, uCenter, vCenter);
+                t.vertexUV(xb, y1, zb, uCenter, vCenter);
+                t.vertexUV(xb, y1, za, uCenter, vCenter);
+                t.vertexUV(xa, y1, za, uCenter, vCenter);
 
-                        // Spodní stěna
-                        t.setColorRGBA_F(baseR * 0.7, baseG * 0.7, baseB * 0.7, 0.8);
-                        if (t.setNormal) t.setNormal(0.0, -1.0, 0.0);
-                        t.vertexUV(x0, y0, z1, u0, v1);
-                        t.vertexUV(x1, y0, z1, u1, v1);
-                        t.vertexUV(x1, y0, z0, u1, v0);
-                        t.vertexUV(x0, y0, z0, u0, v0);
+                if (!isOpaque(xi - 1, zi)) {
+                    t.setColorRGBA_F(0.9, 0.9, 0.9, 0.8);
+                    if (t.setNormal) t.setNormal(-1.0, 0.0, 0.0);
+                    t.vertexUV(xa, y0, zb, uCenter, vCenter);
+                    t.vertexUV(xa, y1, zb, uCenter, vCenter);
+                    t.vertexUV(xa, y1, za, uCenter, vCenter);
+                    t.vertexUV(xa, y0, za, uCenter, vCenter);
+                }
 
-                        // Horní stěna
-                        t.setColorRGBA_F(baseR, baseG, baseB, 0.8);
-                        if (t.setNormal) t.setNormal(0.0, 1.0, 0.0);
-                        t.vertexUV(x0, y1, z1, u0, v1);
-                        t.vertexUV(x1, y1, z1, u1, v1);
-                        t.vertexUV(x1, y1, z0, u1, v0);
-                        t.vertexUV(x0, y1, z0, u0, v0);
+                if (!isOpaque(xi + 1, zi)) {
+                    t.setColorRGBA_F(0.9, 0.9, 0.9, 0.8);
+                    if (t.setNormal) t.setNormal(1.0, 0.0, 0.0);
+                    t.vertexUV(xb, y0, za, uCenter, vCenter);
+                    t.vertexUV(xb, y1, za, uCenter, vCenter);
+                    t.vertexUV(xb, y1, zb, uCenter, vCenter);
+                    t.vertexUV(xb, y0, zb, uCenter, vCenter);
+                }
 
-                        // Boky
-                        if (!isCloud(x - 1, z)) {
-                            t.setColorRGBA_F(baseR * 0.9, baseG * 0.9, baseB * 0.9, 0.8);
-                            if (t.setNormal) t.setNormal(-1.0, 0.0, 0.0);
-                            t.vertexUV(x0, y0, z1, uCenter, vCenter);
-                            t.vertexUV(x0, y1, z1, uCenter, vCenter);
-                            t.vertexUV(x0, y1, z0, uCenter, vCenter);
-                            t.vertexUV(x0, y0, z0, uCenter, vCenter);
-                        }
+                if (!isOpaque(xi, zi - 1)) {
+                    t.setColorRGBA_F(0.8, 0.8, 0.8, 0.8);
+                    if (t.setNormal) t.setNormal(0.0, 0.0, -1.0);
+                    t.vertexUV(xa, y1, za, uCenter, vCenter);
+                    t.vertexUV(xb, y1, za, uCenter, vCenter);
+                    t.vertexUV(xb, y0, za, uCenter, vCenter);
+                    t.vertexUV(xa, y0, za, uCenter, vCenter);
+                }
 
-                        if (!isCloud(x + 1, z)) {
-                            t.setColorRGBA_F(baseR * 0.9, baseG * 0.9, baseB * 0.9, 0.8);
-                            if (t.setNormal) t.setNormal(1.0, 0.0, 0.0);
-                            t.vertexUV(x1, y0, z0, uCenter, vCenter);
-                            t.vertexUV(x1, y1, z0, uCenter, vCenter);
-                            t.vertexUV(x1, y1, z1, uCenter, vCenter);
-                            t.vertexUV(x1, y0, z1, uCenter, vCenter);
-                        }
-
-                        if (!isCloud(x, z - 1)) {
-                            t.setColorRGBA_F(baseR * 0.8, baseG * 0.8, baseB * 0.8, 0.8);
-                            if (t.setNormal) t.setNormal(0.0, 0.0, -1.0);
-                            t.vertexUV(x0, y1, z0, uCenter, vCenter);
-                            t.vertexUV(x1, y1, z0, uCenter, vCenter);
-                            t.vertexUV(x1, y0, z0, uCenter, vCenter);
-                            t.vertexUV(x0, y0, z0, uCenter, vCenter);
-                        }
-
-                        if (!isCloud(x, z + 1)) {
-                            t.setColorRGBA_F(baseR * 0.8, baseG * 0.8, baseB * 0.8, 0.8);
-                            if (t.setNormal) t.setNormal(0.0, 0.0, 1.0);
-                            t.vertexUV(x1, y1, z1, uCenter, vCenter);
-                            t.vertexUV(x0, y1, z1, uCenter, vCenter);
-                            t.vertexUV(x0, y0, z1, uCenter, vCenter);
-                            t.vertexUV(x1, y0, z1, uCenter, vCenter);
-                        }
-                    }
+                if (!isOpaque(xi, zi + 1)) {
+                    t.setColorRGBA_F(0.8, 0.8, 0.8, 0.8);
+                    if (t.setNormal) t.setNormal(0.0, 0.0, 1.0);
+                    t.vertexUV(xb, y1, zb, uCenter, vCenter);
+                    t.vertexUV(xa, y1, zb, uCenter, vCenter);
+                    t.vertexUV(xa, y0, zb, uCenter, vCenter);
+                    t.vertexUV(xb, y0, zb, uCenter, vCenter);
                 }
             }
         }
@@ -6766,27 +6775,49 @@ export class LevelRenderer {
         const geometry = t.flush();
         if (!geometry) return;
 
+        cloudTexture.flipY = false;
         cloudTexture.magFilter = THREE.NearestFilter;
         cloudTexture.minFilter = THREE.NearestFilter;
         cloudTexture.wrapS = THREE.RepeatWrapping;
         cloudTexture.wrapT = THREE.RepeatWrapping;
         cloudTexture.needsUpdate = true;
 
-        const material = new THREE.MeshBasicMaterial({
-            map: cloudTexture,
-            transparent: true,
-            opacity: 0.8,
-            alphaTest: 0.1,
-            vertexColors: true,
-            side: THREE.DoubleSide,
-            depthWrite: false // Oprava: Zabraňuje chybám s průhledností
+        const depthMaterial = new THREE.MeshBasicMaterial({
+            colorWrite: false,
+            depthWrite: true,
+            side: THREE.FrontSide
         });
 
-        this.cloudsMesh = new THREE.Mesh(geometry, material);
-        this.cloudsMesh.renderOrder = -1;
-        this.cloudsMesh.frustumCulled = false; // Oprava: Mraky nikdy nemizí z dohledu
+        const colorMaterial = new THREE.MeshBasicMaterial({
+            map: cloudTexture,
+            transparent: true,
+            alphaTest: 0.1,
+            vertexColors: true,
+            side: THREE.FrontSide,
+            depthWrite: false,
+            depthTest: true
+        });
+
+        const depthMesh = new THREE.Mesh(geometry, depthMaterial);
+        const colorMesh = new THREE.Mesh(geometry, colorMaterial);
+
+        depthMesh.renderOrder = 999998;
+        colorMesh.renderOrder = 999999;
+
+        depthMesh.frustumCulled = false;
+        colorMesh.frustumCulled = false;
+
+        this.cloudsMesh = new THREE.Group();
+        this.cloudsMesh.add(depthMesh);
+        this.cloudsMesh.add(colorMesh);
+
+        this.cloudsMesh.position.set(-this.cloudWidth / 2, 0, -this.cloudHeight / 2);
+
+        this.cloudsGroup = new THREE.Group();
+        this.cloudsGroup.add(this.cloudsMesh);
+
         if (this.scene) {
-            this.scene.add(this.cloudsMesh);
+            this.scene.add(this.cloudsGroup);
         }
     }
 
@@ -6794,28 +6825,15 @@ export class LevelRenderer {
         if (!this.cloudsMesh) {
             this.compileClouds();
         }
-        if (!this.cloudsMesh) return;
+        if (!this.cloudsMesh || !this.cloudsMesh.material || !this.cloudsMesh.material.map) return;
 
-        const tickTime = performance.now() / 50;
-        const cloudSpeed = 0.03;
-        const scale = 12;
+        const f2 = 4.8828125E-4;
+        const scale = 12.0;
+        const tickTime = performance.now() / 0.0058;
 
-        if (this.cloudWidth && this.camera) {
-            const playerX = this.camera.position.x;
-            const playerZ = this.camera.position.z;
-            const cloudWidth = this.cloudWidth;
+        const scrollX = ((tickTime + partialTick) * f2 * 3 * scale) % this.cloudWidth;
 
-            // Modulo offsetu chrání před ztrátou desetinné přesnosti při velmi dlouhém hraní
-            const cloudMoveOffset = ((tickTime + partialTick) * cloudSpeed * scale) % cloudWidth;
-
-            // Matematika pro plynulé nekonečné posouvání a udržení mraků u hráče
-            const modX = (((playerX + cloudMoveOffset) % cloudWidth) + cloudWidth) % cloudWidth;
-            const modZ = ((playerZ % cloudWidth) + cloudWidth) % cloudWidth;
-
-            this.cloudsMesh.position.x = playerX - modX;
-            this.cloudsMesh.position.z = playerZ - modZ;
-        }
-
+        this.cloudsMesh.position.x = -this.cloudWidth / 2 + scrollX;
         this.cloudsMesh.visible = true;
     }
 
@@ -6823,8 +6841,7 @@ export class LevelRenderer {
         this.renderDistance = Math.max(1, chunks);
         const maxBlocks = (this.renderDistance * this.CHUNK_SIZE) - 16;
 
-        // Oprava: Zajistí, aby camera.far nezastřihla mraky, i když je render distance příliš malá
-        const minFar = (this.level.depth + 2) + 128; 
+        const minFar = (this.level.depth + 2) + 128;
         const finalFar = Math.max(maxBlocks, minFar);
 
         if (this.camera) {
@@ -7037,7 +7054,7 @@ export class LevelRenderer {
 export class Tesselator {
     static instance = new Tesselator();
 
-    constructor(maxVertices = 5000000) { 
+    constructor(maxVertices = 5000000) {
         this.positions = new Float32Array(maxVertices * 3);
         this.uvs = new Float32Array(maxVertices * 2);
         this.colors = new Float32Array(maxVertices * 4); // Oprava: Přidána podpora pro alfa kanál (RGBA)
@@ -7550,7 +7567,7 @@ export class Tile {
 }
 
 
-class GrassTile extends Tile {
+export class GrassTile extends Tile {
     constructor(id) {
         super(id);
         this.tex = 3;
@@ -7599,7 +7616,10 @@ export class Player extends Entity {
         this.engine = this.level.engine;
         this.input = this.engine.input;
 
+        this.heightOffset = 1.62;
+
         this.x = 0; this.y = 0; this.z = 0;
+
         this.xo = 0; this.yo = 0; this.zo = 0;
 
         this.xd = 0; this.yd = 0; this.zd = 0;
@@ -7614,8 +7634,11 @@ export class Player extends Entity {
         this.b2state = false;
 
         this.speedBoost = 10;
+        this.jumpBoost = 5;
 
         this.walkSpeed = 0.1;
+
+        this.jumpPower = 0.5;
 
         this.event = this.engine.input_manager.mouseMoved.addEvent((pos) => {
             if (document.pointerLockElement) {
@@ -7733,7 +7756,7 @@ export class Player extends Entity {
             if (this.input.getInputState("ArrowRight") || this.input.getInputState("KeyD")) xa += 1.0;
 
             if (this.input.getInputState("Space") && this.onGround) {
-                this.yd = 0.5;
+                this.yd = this.jumpPower * this.jumpBoost;
             }
 
             if (this.input.getInputState("KeyG")) {
@@ -7831,6 +7854,64 @@ export class Player extends Entity {
 
     destroy() {
         this.engine.input_manager.mouseMoved.removeEvent(this.event);
+    }
+}
+
+
+
+
+
+
+
+
+export class Inventory {
+    constructor(level) {
+        this.level = level;
+
+        this.slots = new Array(9);
+        this.selected = 0;
+
+        this.slots[0] = 1;
+        this.slots[1] = 2;
+        this.slots[2] = 3;
+        this.slots[3] = 4;
+        this.slots[4] = 5;
+        this.slots[5] = 6;
+        this.slots[6] = 7;
+        this.slots[7] = 8; 
+        this.slots[8] = 9;
+    }
+
+    getSelectedSlotId() {
+        return this.slots[this.selected];
+    }
+
+    scroll(direction) {
+        if (direction > 0) direction = 1;
+        if (direction < 0) direction = -1;
+        this.selected -= direction;
+        while (this.selected < 0) this.selected += this.slots.length;
+        while (this.selected >= this.slots.length) this.selected -= this.slots.length;
+    }
+
+    selectSlot(index) {
+        if (index >= 0 && index < this.slots.length) {
+            this.selected = index;
+        }
+    }
+
+    pickBlock(blockId) {
+        if (blockId <= 0) return;
+        for (let i = 0; i < this.slots.length; i++) {
+            if (this.slots[i] === blockId) {
+                this.selected = i;
+                return;
+            }
+        }
+
+        if (Inventory.ALLOWED_TILES.includes(blockId)) {
+            this.slots[this.selected] = blockId;
+        }
     }
 }
 
