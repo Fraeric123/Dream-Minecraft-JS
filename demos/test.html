@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="cs">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Minecraft World Demo - Textures & Blocks</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        #crosshair::before,
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            background: white;
+        }
+
+        #crosshair::before {
+            top: 4px;
+            left: 0;
+            width: 10px;
+            height: 2px;
+        }
+
+        #crosshair::after {
+            top: 0;
+            left: 4px;
+            width: 2px;
+            height: 10px;
+        }
+
+        #info {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 12px;
+            border-radius: 5px;
+            line-height: 1.5;
+            user-select: none;
+        }
+
+        #stats {
+            color: #55ff55;
+            font-weight: bold;
+        }
+
+        #selected-block {
+            color: #ffff55;
+            font-weight: bold;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="crosshair"></div>
+    <div id="info">
+        <strong>Nekonečný Svět:</strong><br>
+        Klikni pro uzamčení myši<br>
+        W, A, S, D / Mezerník / Shift = Pohyb<br>
+        Leve tlačítko = Zničit / Pravé = Položit<br>
+        Kolečko myši / 1, 2, 3 = Výběr bloku<br><br>
+        <div id="stats">Načítání světa...</div>
+        <div id="selected-block">Vybraný blok: Tráva (1)</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // --- 1. GENERÁTOR CANVAS/SVG TEXTUR ---
+        function createPixelTexture(drawFunction, rotation = 0) {
+            const canvas = document.createElement('canvas');
+            canvas.width = 16;
+            canvas.height = 16;
+            const ctx = canvas.getContext('2d');
+
+            drawFunction(ctx);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.magFilter = THREE.NearestFilter; // Důležité pro retro Minecraft pixelový vzhled!
+            texture.minFilter = THREE.NearestFilter;
+
+            // Pokud je zadána rotace (např. Math.PI / 2 pro 90 stupňů)
+            if (rotation !== 0) {
+                texture.center.set(0.5, 0.5); // Nastavíme střed otáčení do středu textury
+                texture.rotation = rotation;
+            }
+
+            return texture;
+        }
+
+        // Pomocná funkce na náhodný šum
+        function noise(ctx, colorBase, variance) {
+            for (let x = 0; x < 16; x++) {
+                for (let y = 0; y < 16; y++) {
+                    const val = Math.floor((Math.random() - 0.5) * variance);
+                    ctx.fillStyle = `rgb(${colorBase[0] + val}, ${colorBase[1] + val}, ${colorBase[2] + val})`;
+                    ctx.fillRect(x, y, 1, 1);
+                }
+            }
+        }
+
+        // Vytvoření textur pro různé typy povrchů
+        const textures = {
+            grassTop: createPixelTexture(ctx => {
+                noise(ctx, [85, 170, 85], 30);
+            }),
+            grassSide: createPixelTexture(ctx => {
+                // Hliněný podklad
+                noise(ctx, [134, 96, 67], 20);
+                // Vrchní zelený stékající okraj
+                for (let x = 0; x < 16; x++) {
+                    const depth = 3 + Math.floor(Math.sin(x) * 1.5);
+                    for (let y = 0; y < depth; y++) {
+                        const val = Math.floor((Math.random() - 0.5) * 30);
+                        ctx.fillStyle = `rgb(${85 + val}, ${170 + val}, ${85 + val})`;
+                        ctx.fillRect(x, y, 1, 1);
+                    }
+                }
+            }, Math.PI * 1.5),
+            dirt: createPixelTexture(ctx => {
+                noise(ctx, [134, 96, 67], 25);
+            }),
+            stone: createPixelTexture(ctx => {
+                noise(ctx, [128, 128, 128], 35);
+            })
+        };
+
+        // --- DEFINICE DRUHŮ BLOKŮ A JEJICH MATERIÁLŮ ---
+        const BLOCK_TYPES = {
+            AIR: 0,
+            GRASS: 1,
+            DIRT: 2,
+            STONE: 3
+        };
+
+        const BLOCK_NAMES = {
+            1: "Tráva (1)",
+            2: "Hlína (2)",
+            3: "Kámen (3)"
+        };
+
+        let currentSelectedBlock = BLOCK_TYPES.GRASS;
+
+        // Vytvoříme atlas materiálů pro všechny strany bloků
+        const blockMaterials = [
+            null, // AIR
+            // GRASS (v pořadí stran: +X, -X, +Y [vršek], -Y [spodek], +Z, -Z)
+            [
+                new THREE.MeshLambertMaterial({ map: textures.grassSide }),
+                new THREE.MeshLambertMaterial({ map: textures.grassSide }),
+                new THREE.MeshLambertMaterial({ map: textures.grassTop }),
+                new THREE.MeshLambertMaterial({ map: textures.dirt }),
+                new THREE.MeshLambertMaterial({ map: textures.grassSide }),
+                new THREE.MeshLambertMaterial({ map: textures.grassSide })
+            ],
+            // DIRT
+            new THREE.MeshLambertMaterial({ map: textures.dirt }),
+            // STONE
+            new THREE.MeshLambertMaterial({ map: textures.stone })
+        ];
+
+        // --- 2. CONFIG a NASTAVENÍ SCÉNY ---
+        const CHUNK_SIZE = 16;
+        const RENDER_DISTANCE = 4;
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x6eb1ff);
+        scene.fog = new THREE.Fog(0x6eb1ff, (RENDER_DISTANCE - 1) * CHUNK_SIZE, RENDER_DISTANCE * CHUNK_SIZE);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene.add(ambientLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+        dirLight.position.set(20, 40, 20);
+        scene.add(dirLight);
+
+        // --- 3. SPRÁVA CHUNKŮ ---
+        const loadedChunks = new Map();
+
+        function getGlobalBlock(wx, wy, wz) {
+            if (wy < 0 || wy >= CHUNK_SIZE) return BLOCK_TYPES.AIR;
+
+            const cx = Math.floor(wx / CHUNK_SIZE);
+            const cz = Math.floor(wz / CHUNK_SIZE);
+            const key = `${cx},${cz}`;
+
+            const chunk = loadedChunks.get(key);
+            if (!chunk) return BLOCK_TYPES.AIR;
+
+            const lx = ((wx % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+            const lz = ((wz % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+            return chunk.data[chunk.getBlockIndex(lx, wy, lz)];
+        }
+
+        class Chunk {
+            constructor(cx, cz) {
+                this.cx = cx;
+                this.cz = cz;
+                this.data = new Uint8Array(CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE);
+                this.group = new THREE.Group();
+                scene.add(this.group);
+
+                this.generateTerrain();
+            }
+
+            getBlockIndex(x, y, z) {
+                return x + CHUNK_SIZE * (y + CHUNK_SIZE * z);
+            }
+
+            getBlock(x, y, z) {
+                if (x < 0 || x >= CHUNK_SIZE || y < 0 || y >= CHUNK_SIZE || z < 0 || z >= CHUNK_SIZE) {
+                    const worldX = this.cx * CHUNK_SIZE + x;
+                    const worldZ = this.cz * CHUNK_SIZE + z;
+                    return getGlobalBlock(worldX, y, worldZ);
+                }
+                return this.data[this.getBlockIndex(x, y, z)];
+            }
+
+            setBlock(x, y, z, value) {
+                if (x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE) {
+                    this.data[this.getBlockIndex(x, y, z)] = value;
+                    this.rebuildMesh();
+
+                    const worldX = this.cx * CHUNK_SIZE + x;
+                    const worldZ = this.cz * CHUNK_SIZE + z;
+
+                    if (x === 0) updateChunkMeshAt(worldX - 1, worldZ);
+                    if (x === CHUNK_SIZE - 1) updateChunkMeshAt(worldX + 1, worldZ);
+                    if (z === 0) updateChunkMeshAt(worldX, worldZ - 1);
+                    if (z === CHUNK_SIZE - 1) updateChunkMeshAt(worldX, worldZ + 1);
+                }
+            }
+
+            generateTerrain() {
+                for (let x = 0; x < CHUNK_SIZE; x++) {
+                    for (let z = 0; z < CHUNK_SIZE; z++) {
+                        const worldX = this.cx * CHUNK_SIZE + x;
+                        const worldZ = this.cz * CHUNK_SIZE + z;
+
+                        let height = Math.floor(6 + Math.sin(worldX * 0.1) * 3 + Math.cos(worldZ * 0.1) * 3);
+                        height = Math.max(1, Math.min(CHUNK_SIZE - 1, height));
+
+                        for (let y = 0; y < height; y++) {
+                            let type = BLOCK_TYPES.STONE;
+                            if (y === height - 1) {
+                                type = BLOCK_TYPES.GRASS;
+                            } else if (y >= height - 3) {
+                                type = BLOCK_TYPES.DIRT;
+                            }
+                            this.data[this.getBlockIndex(x, y, z)] = type;
+                        }
+                    }
+                }
+            }
+
+            rebuildMesh() {
+                // Vyčištění starých meshe skupiny
+                while (this.group.children.length > 0) {
+                    const obj = this.group.children[0];
+                    obj.geometry.dispose();
+                    this.group.remove(obj);
+                }
+
+                const FACES = [
+                    { dir: [1, 0, 0], corners: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]], faceIdx: 0 },
+                    { dir: [-1, 0, 0], corners: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]], faceIdx: 1 },
+                    { dir: [0, 1, 0], corners: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]], faceIdx: 2 },
+                    { dir: [0, -1, 0], corners: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]], faceIdx: 3 },
+                    { dir: [0, 0, 1], corners: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]], faceIdx: 4 },
+                    { dir: [0, 0, -1], corners: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]], faceIdx: 5 }
+                ];
+
+                // Sestavení geometrie pro každý typ bloku zvlášť
+                for (let type = 1; type <= 3; type++) {
+                    const positions = [];
+                    const normals = [];
+                    const uvs = [];
+                    const indices = [];
+
+                    for (let x = 0; x < CHUNK_SIZE; x++) {
+                        for (let y = 0; y < CHUNK_SIZE; y++) {
+                            for (let z = 0; z < CHUNK_SIZE; z++) {
+                                if (this.getBlock(x, y, z) !== type) continue;
+
+                                for (const face of FACES) {
+                                    const nx = x + face.dir[0];
+                                    const ny = y + face.dir[1];
+                                    const nz = z + face.dir[2];
+
+                                    if (this.getBlock(nx, ny, nz) === BLOCK_TYPES.AIR) {
+                                        const ndx = positions.length / 3;
+                                        for (const c of face.corners) {
+                                            positions.push(x + c[0], y + c[1], z + c[2]);
+                                            normals.push(...face.dir);
+                                        }
+                                        // UV souřadnice pro namapování textury
+                                        uvs.push(0, 0, 1, 0, 1, 1, 0, 1);
+
+                                        if (type === BLOCK_TYPES.GRASS) {
+                                            // Pro trávu musíme určit ID materiálu pro konkrétní stranu
+                                            const a = ndx, b = ndx + 1, c = ndx + 2, d = ndx + 3;
+                                            indices.push(a, b, c, a, c, d);
+                                        } else {
+                                            indices.push(ndx, ndx + 1, ndx + 2, ndx, ndx + 2, ndx + 3);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if (positions.length === 0) continue;
+
+                    const geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                    geometry.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+                    geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+
+                    if (type === BLOCK_TYPES.GRASS) {
+                        // Tráva má rozdělené stěny na skupiny podle materiálů
+                        let groupOffset = 0;
+                        for (let i = 0; i < indices.length; i += 6) {
+                            // Určíme stranu podle normály
+                            const normY = normals[i * 2 + 1];
+                            let matIndex = 0; // boky
+                            if (normY === 1) matIndex = 2; // vršek
+                            else if (normY === -1) matIndex = 3; // spodek
+
+                            geometry.addGroup(i, 6, matIndex);
+                        }
+                    }
+
+                    geometry.setIndex(indices);
+
+                    const mesh = new THREE.Mesh(geometry, blockMaterials[type]);
+                    mesh.position.set(this.cx * CHUNK_SIZE, 0, this.cz * CHUNK_SIZE);
+                    this.group.add(mesh);
+                }
+            }
+
+            destroy() {
+                while (this.group.children.length > 0) {
+                    const obj = this.group.children[0];
+                    obj.geometry.dispose();
+                    this.group.remove(obj);
+                }
+                scene.remove(this.group);
+            }
+        }
+
+        function updateChunkMeshAt(wx, wz) {
+            const cx = Math.floor(wx / CHUNK_SIZE);
+            const cz = Math.floor(wz / CHUNK_SIZE);
+            const chunk = loadedChunks.get(`${cx},${cz}`);
+            if (chunk) chunk.rebuildMesh();
+        }
+
+        function updateChunksAroundPlayer() {
+            const playerCx = Math.floor(camera.position.x / CHUNK_SIZE);
+            const playerCz = Math.floor(camera.position.z / CHUNK_SIZE);
+
+            const activeKeys = new Set();
+            const newChunks = [];
+
+            for (let x = -RENDER_DISTANCE; x <= RENDER_DISTANCE; x++) {
+                for (let z = -RENDER_DISTANCE; z <= RENDER_DISTANCE; z++) {
+                    const cx = playerCx + x;
+                    const cz = playerCz + z;
+                    const key = `${cx},${cz}`;
+                    activeKeys.add(key);
+
+                    if (!loadedChunks.has(key)) {
+                        const chunk = new Chunk(cx, cz);
+                        loadedChunks.set(key, chunk);
+                        newChunks.push(chunk);
+                    }
+                }
+            }
+
+            for (const chunk of newChunks) {
+                chunk.rebuildMesh();
+            }
+
+            for (const [key, chunk] of loadedChunks.entries()) {
+                if (!activeKeys.has(key)) {
+                    chunk.destroy();
+                    loadedChunks.delete(key);
+                }
+            }
+
+            document.getElementById('stats').innerHTML =
+                `Pozice kamery: [${Math.floor(camera.position.x)}, ${Math.floor(camera.position.y)}, ${Math.floor(camera.position.z)}]<br>` +
+                `Načtených chunků: ${loadedChunks.size}`;
+        }
+
+        // --- 4. OVLÁDÁNÍ A INTERAKCE ---
+        camera.position.set(8, 12, 8);
+
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false, moveUp = false, moveDown = false;
+        let yaw = 0, pitch = 0;
+
+        document.addEventListener('click', () => document.body.requestPointerLock());
+
+        document.addEventListener('mousemove', (e) => {
+            if (document.pointerLockElement === document.body) {
+                yaw -= e.movementX * 0.002;
+                pitch -= e.movementY * 0.002;
+                pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch));
+
+                camera.rotation.order = "YXZ";
+                camera.rotation.y = yaw;
+                camera.rotation.x = pitch;
+            }
+        });
+
+        // Přepínání bloků pomocí kláves 1, 2, 3
+        document.addEventListener('keydown', (e) => {
+            switch (e.code) {
+                case 'KeyW': moveForward = true; break;
+                case 'KeyS': moveBackward = true; break;
+                case 'KeyA': moveLeft = true; break;
+                case 'KeyD': moveRight = true; break;
+                case 'Space': moveUp = true; break;
+                case 'ShiftLeft': moveDown = true; break;
+                case 'Digit1': setSelectedBlock(BLOCK_TYPES.GRASS); break;
+                case 'Digit2': setSelectedBlock(BLOCK_TYPES.DIRT); break;
+                case 'Digit3': setSelectedBlock(BLOCK_TYPES.STONE); break;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            switch (e.code) {
+                case 'KeyW': moveForward = false; break;
+                case 'KeyS': moveBackward = false; break;
+                case 'KeyA': moveLeft = false; break;
+                case 'KeyD': moveRight = false; break;
+                case 'Space': moveUp = false; break;
+                case 'ShiftLeft': moveDown = false; break;
+            }
+        });
+
+        // Přepínání kolečkem myši
+        document.addEventListener('wheel', (e) => {
+            let nextBlock = currentSelectedBlock + (e.deltaY > 0 ? 1 : -1);
+            if (nextBlock > 3) nextBlock = 1;
+            if (nextBlock < 1) nextBlock = 3;
+            setSelectedBlock(nextBlock);
+        });
+
+        function setSelectedBlock(type) {
+            currentSelectedBlock = type;
+            document.getElementById('selected-block').innerText = `Vybraný blok: ${BLOCK_NAMES[type]}`;
+        }
+
+        // Raycasting pro těžení / pokládání
+        const raycaster = new THREE.Raycaster();
+        document.addEventListener('mousedown', (e) => {
+            if (document.pointerLockElement !== document.body) return;
+
+            raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+            const ray = raycaster.ray;
+            let dir = ray.direction.clone().multiplyScalar(0.05);
+            let pos = ray.origin.clone();
+
+            let lastEmptyPos = null;
+
+            for (let i = 0; i < 150; i++) {
+                pos.add(dir);
+                let bx = Math.floor(pos.x);
+                let by = Math.floor(pos.y);
+                let bz = Math.floor(pos.z);
+
+                if (getGlobalBlock(bx, by, bz) !== BLOCK_TYPES.AIR) {
+                    const isDestroying = e.button === 0;
+                    const targetX = isDestroying ? bx : (lastEmptyPos ? lastEmptyPos.x : null);
+                    const targetY = isDestroying ? by : (lastEmptyPos ? lastEmptyPos.y : null);
+                    const targetZ = isDestroying ? bz : (lastEmptyPos ? lastEmptyPos.z : null);
+
+                    if (targetX !== null && targetY !== null && targetZ !== null) {
+                        const cx = Math.floor(targetX / CHUNK_SIZE);
+                        const cz = Math.floor(targetZ / CHUNK_SIZE);
+                        const chunk = loadedChunks.get(`${cx},${cz}`);
+
+                        if (chunk) {
+                            const lx = ((targetX % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                            const lz = ((targetZ % CHUNK_SIZE) + CHUNK_SIZE) % CHUNK_SIZE;
+                            chunk.setBlock(lx, targetY, lz, isDestroying ? BLOCK_TYPES.AIR : currentSelectedBlock);
+                        }
+                    }
+                    break;
+                }
+                lastEmptyPos = { x: bx, y: by, z: bz };
+            }
+        });
+
+        document.addEventListener('contextmenu', e => e.preventDefault());
+
+        // --- 5. MAIN LOOP ---
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = Math.min(clock.getDelta(), 0.1);
+            const speed = 15 * delta;
+
+            const front = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+            const side = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion);
+
+            if (moveForward) camera.position.addScaledVector(front, speed);
+            if (moveBackward) camera.position.addScaledVector(front, -speed);
+            if (moveRight) camera.position.addScaledVector(side, speed);
+            if (moveLeft) camera.position.addScaledVector(side, -speed);
+            if (moveUp) camera.position.y += speed;
+            if (moveDown) camera.position.y -= speed;
+
+            updateChunksAroundPlayer();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+
+</html>

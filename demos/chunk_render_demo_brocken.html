@@ -1,0 +1,1330 @@
+<!DOCTYPE html>
+<html lang="cs">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Minecraft - Physics & Detailed Textures</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: sans-serif;
+            user-select: none;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        #crosshair::before,
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            background: white;
+        }
+
+        #crosshair::before {
+            top: 4px;
+            left: 0;
+            width: 10px;
+            height: 2px;
+        }
+
+        #crosshair::after {
+            top: 0;
+            left: 4px;
+            width: 2px;
+            height: 10px;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: monospace;
+            font-size: 13px;
+            text-shadow: 1px 1px 2px black;
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 14px;
+            border-radius: 6px;
+            line-height: 1.4;
+        }
+
+        #selected-block {
+            color: #ffff55;
+            font-weight: bold;
+        }
+
+        #render-distance-display {
+            color: #55ffff;
+            font-weight: bold;
+        }
+
+        .stats-panel {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(255, 255, 255, 0.3);
+            color: #dddddd;
+        }
+
+        .stats-panel span {
+            color: #aaffaa;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="crosshair"></div>
+    <div id="ui">
+        Seed: <span id="seed-display"></span><br>
+        Vybraný blok [1-5]: <span id="selected-block">GRASS</span><br>
+        Dohled [F]: <span id="render-distance-display">8</span> chunků<br>
+
+        <div class="stats-panel">
+            <strong>Statistiky světa:</strong><br>
+            FPS: <span id="fps-display">0</span><br>
+            Pozice: <span id="pos-display">0, 0, 0</span><br>
+            Chunky v paměti: <span id="chunks-mem-display">0</span><br>
+            Renderované chunky: <span id="chunks-render-display">0</span><br>
+            Počet geometrií: <span id="geo-display">0</span><br>
+            Počet materiálů: <span id="mat-display">0</span><br>
+            Draw Calls: <span id="drawcalls-display">0</span>
+        </div>
+
+        <small style="display: block; margin-top: 6px; color: #ccc;">
+            LMB: Ničit | RMB: Stavět | WASD: Pohyb | Mezerník: Skok | F: Změna dohledu
+        </small>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        function getNoise(x, y, z, seed = 0) {
+            let h = (x * 374761393 + y * 668265263 + z * 362827313 + seed * 1274126177) | 0;
+            h = Math.imul(h ^ (h >>> 13), 1274126177);
+            return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+        }
+
+        // ==========================================
+        // 0. AABB FYZIKA
+        // ==========================================
+        class AABB {
+            constructor(x0, y0, z0, x1, y1, z1) {
+                this.epsilon = 0.001;
+                this.x0 = x0;
+                this.y0 = y0;
+                this.z0 = z0;
+                this.x1 = x1;
+                this.y1 = y1;
+                this.z1 = z1;
+            }
+
+            expand(xa, ya, za) {
+                let _x0 = this.x0, _y0 = this.y0, _z0 = this.z0;
+                let _x1 = this.x1, _y1 = this.y1, _z1 = this.z1;
+
+                if (xa < 0.0) _x0 += xa;
+                if (xa > 0.0) _x1 += xa;
+                if (ya < 0.0) _y0 += ya;
+                if (ya > 0.0) _y1 += ya;
+                if (za < 0.0) _z0 += za;
+                if (za > 0.0) _z1 += za;
+
+                return new AABB(_x0, _y0, _z0, _x1, _y1, _z1);
+            }
+
+            grow(xa, ya, za) {
+                return new AABB(
+                    this.x0 - xa, this.y0 - ya, this.z0 - za,
+                    this.x1 + xa, this.y1 + ya, this.z1 + za
+                );
+            }
+
+            cloneMove(xa, ya, za) {
+                return new AABB(this.x0 + xa, this.y0 + ya, this.z0 + za, this.x1 + xa, this.y1 + ya, this.z1 + za);
+            }
+
+            clipXCollide(c, xa) {
+                if (c.y1 <= this.y0 || c.y0 >= this.y1) return xa;
+                if (c.z1 <= this.z0 || c.z0 >= this.z1) return xa;
+
+                if (xa > 0.0 && c.x1 <= this.x0) {
+                    let max = this.x0 - c.x1 - this.epsilon;
+                    if (max < xa) xa = max;
+                }
+                if (xa < 0.0 && c.x0 >= this.x1) {
+                    let max = this.x1 - c.x0 + this.epsilon;
+                    if (max > xa) xa = max;
+                }
+                return xa;
+            }
+
+            clipYCollide(c, ya) {
+                if (c.x1 <= this.x0 || c.x0 >= this.x1) return ya;
+                if (c.z1 <= this.z0 || c.z0 >= this.z1) return ya;
+
+                if (ya > 0.0 && c.y1 <= this.y0) {
+                    let max = this.y0 - c.y1 - this.epsilon;
+                    if (max < ya) ya = max;
+                }
+                if (ya < 0.0 && c.y0 >= this.y1) {
+                    let max = this.y1 - c.y0 + this.epsilon;
+                    if (max > ya) ya = max;
+                }
+                return ya;
+            }
+
+            clipZCollide(c, za) {
+                if (c.x1 <= this.x0 || c.x0 >= this.x1) return za;
+                if (c.y1 <= this.y0 || c.y0 >= this.y1) return za;
+
+                if (za > 0.0 && c.z1 <= this.z0) {
+                    let max = this.z0 - c.z1 - this.epsilon;
+                    if (max < za) za = max;
+                }
+                if (za < 0.0 && c.z0 >= this.z1) {
+                    let max = this.z1 - c.z0 + this.epsilon;
+                    if (max > za) za = max;
+                }
+                return za;
+            }
+
+            intersects(c) {
+                if (c.x1 <= this.x0 || c.x0 >= this.x1) return false;
+                if (c.y1 <= this.y0 || c.y0 >= this.y1) return false;
+                return !(c.z1 <= this.z0) && !(c.z0 >= this.z1);
+            }
+
+            move(xa, ya, za) {
+                this.x0 += xa; this.y0 += ya; this.z0 += za;
+                this.x1 += xa; this.y1 += ya; this.z1 += za;
+            }
+        }
+
+        // ==========================================
+        // 1. JAVA RANDOM & PERLIN NOISE FILTER
+        // ==========================================
+        class JavaRandom {
+            static p2_16 = 0x10000;
+            static p2_24 = 0x1000000;
+            static p2_27 = 0x8000000;
+            static p2_31 = 0x80000000;
+            static p2_32 = 0x100000000;
+            static p2_48 = 0x1000000000000;
+            static p2_53 = Math.pow(2, 53);
+            static m2_16 = 0xffff;
+            static c2 = 0x0005;
+            static c1 = 0xdeec;
+            static c0 = 0xe66d;
+
+            constructor(seedval) {
+                this.s2 = 0; this.s1 = 0; this.s0 = 0;
+                this.nextNextGaussian = 0;
+                this.haveNextNextGaussian = false;
+
+                if (seedval === undefined) {
+                    seedval = Math.floor(Math.random() * JavaRandom.p2_48);
+                }
+                this.setSeed(seedval);
+            }
+
+            _next() {
+                let carry = 0xb;
+                let r0 = (this.s0 * JavaRandom.c0) + carry;
+                carry = r0 >>> 16;
+                r0 &= JavaRandom.m2_16;
+                let r1 = (this.s1 * JavaRandom.c0 + this.s0 * JavaRandom.c1) + carry;
+                carry = r1 >>> 16;
+                r1 &= JavaRandom.m2_16;
+                let r2 = (this.s2 * JavaRandom.c0 + this.s1 * JavaRandom.c1 + this.s0 * JavaRandom.c2) + carry;
+                r2 &= JavaRandom.m2_16;
+
+                this.s2 = r2; this.s1 = r1; this.s0 = r0;
+                return (r2 << 16) | r1;
+            }
+
+            next(bits) { return this._next() >>> (32 - bits); }
+            next_signed(bits) { return this._next() >> (32 - bits); }
+
+            setSeed(n) {
+                let bSeed = (BigInt(n) ^ 0x5DEECE66Dn) & ((1n << 48n) - 1n);
+
+                this.s0 = Number(bSeed & 0xFFFFn);
+                this.s1 = Number((bSeed >> 16n) & 0xFFFFn);
+                this.s2 = Number((bSeed >> 32n) & 0xFFFFn);
+
+                this.haveNextNextGaussian = false;
+            }
+
+            nextInt(bound) {
+                if (bound === undefined) return this.next_signed(32);
+                if (bound <= 0) throw new RangeError("bound must be positive");
+
+                if ((bound & -bound) === bound) {
+                    return Number((BigInt(bound) * BigInt(this.next(31))) >> 31n);
+                }
+
+                let bits, val;
+                do {
+                    bits = this.next(31);
+                    val = bits % bound;
+                } while (bits - val + (bound - 1) < 0);
+                return val;
+            }
+
+            nextBoolean() { return this.next(1) !== 0; }
+            nextFloat() { return this.next(24) / JavaRandom.p2_24; }
+            nextDouble() { return (JavaRandom.p2_27 * this.next(26) + this.next(27)) / JavaRandom.p2_53; }
+        }
+
+        class PerlinNoiseFilter {
+            constructor(levels) {
+                this.levels = levels;
+                this.fuzz = 16;
+            }
+
+            read(width, height, random) {
+                if (!random) {
+                    random = new JavaRandom(Math.floor(Math.random() * 0x1000000000000));
+                }
+
+                const tmp = new Array(width * height).fill(0);
+                const level = this.levels;
+
+                let step = width >> level;
+                for (let y = 0; y < height; y += step) {
+                    for (let x = 0; x < width; x += step) {
+                        tmp[x + y * width] = (random.nextInt(256) - 128) * this.fuzz;
+                    }
+                }
+
+                for (step = width >> level; step > 1; step = Math.floor(step / 2)) {
+                    let val = 256 * (step << level);
+                    let ss = Math.floor(step / 2);
+
+                    for (let i = 0; i < height; i += step) {
+                        for (let x = 0; x < width; x += step) {
+                            let ul = tmp[(x + 0) % width + ((i + 0) % height) * width];
+                            let ur = tmp[(x + step) % width + ((i + 0) % height) * width];
+                            let dl = tmp[(x + 0) % width + ((i + step) % height) * width];
+                            let dr = tmp[(x + step) % width + ((i + step) % height) * width];
+
+                            let m = Math.trunc((ul + dl + ur + dr) / 4) + random.nextInt(val * 2) - val;
+
+                            tmp[x + ss + (i + ss) * width] = m;
+                        }
+                    }
+
+                    for (let i = 0; i < height; i += step) {
+                        for (let x = 0; x < width; x += step) {
+                            let c = tmp[x + i * width];
+                            let r = tmp[(x + step) % width + i * width];
+                            let d = tmp[x + ((i + step) % height) * width];
+
+                            let mu = tmp[((x + ss) & (width - 1)) + ((i + ss - step) & (height - 1)) * width];
+                            let ml = tmp[((x + ss - step) & (width - 1)) + ((i + ss) & (height - 1)) * width];
+                            let m = tmp[(x + ss) % width + ((i + ss) % height) * width];
+
+                            let u = Math.trunc((c + r + m + mu) / 4) + random.nextInt(val * 2) - val;
+                            let l = Math.trunc((c + d + m + ml) / 4) + random.nextInt(val * 2) - val;
+
+                            tmp[x + ss + i * width] = u;
+                            tmp[x + (i + ss) * width] = l;
+                        }
+                    }
+                }
+
+                const result = new Float32Array(width * height);
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < width; x++) {
+                        result[x + y * width] = Math.trunc(tmp[(x % width) + (y % height) * width] / 512) + 128;
+                    }
+                }
+                return result;
+            }
+        }
+
+        // ==========================================
+        // 2. KONSTANTY & PROCEDURÁLNÍ GENEROVÁNÍ TEXTUR
+        // ==========================================
+        // ==========================================
+        // 2. KONSTANTY & PROCEDURÁLNÍ GENEROVÁNÍ TEXTUR
+        // ==========================================
+        const BLOCKS = { AIR: 0, GRASS: 1, DIRT: 2, STONE: 3, LOG: 4, LEAVES: 5 };
+        const BLOCK_NAMES = { 1: 'GRASS', 2: 'DIRT', 3: 'STONE', 4: 'LOG', 5: 'LEAVES' };
+
+        const CHUNK_SIZE = 16;
+        const SUBCHUNK_HEIGHT = 16;
+        const CHUNK_HEIGHT = 64;
+        const SUBCHUNKS_PER_COLUMN = CHUNK_HEIGHT / SUBCHUNK_HEIGHT; // 4 patra
+        const WORLD_SEED = 12345;
+
+        document.getElementById('seed-display').innerText = WORLD_SEED;
+
+        // Mapování textur na atlasu
+        function getBlockFaceUVs(blockType, dir) {
+            let texCoord = { col: 2, row: 0 }; // výchozí dirt
+            if (blockType === BLOCKS.GRASS) {
+                if (dir[1] === 1) texCoord = { col: 0, row: 0 }; // top
+                else if (dir[1] === -1) texCoord = { col: 2, row: 0 }; // bottom
+                else texCoord = { col: 1, row: 0 }; // side
+            } else if (blockType === BLOCKS.DIRT) {
+                texCoord = { col: 2, row: 0 };
+            } else if (blockType === BLOCKS.STONE) {
+                texCoord = { col: 3, row: 0 };
+            } else if (blockType === BLOCKS.LOG) {
+                if (dir[1] !== 0) texCoord = { col: 4, row: 0 }; // top/bottom
+                else texCoord = { col: 5, row: 0 }; // side
+            } else if (blockType === BLOCKS.LEAVES) {
+                texCoord = { col: 6, row: 0 };
+            }
+
+            const tileSize = 16;
+            const padding = 1;
+            const paddedSize = tileSize + padding * 2;
+            const atlasSize = 8 * paddedSize;
+
+            const u0 = (texCoord.col * paddedSize + padding) / atlasSize;
+            const v0 = (texCoord.row * paddedSize + padding) / atlasSize;
+            const u1 = ((texCoord.col + 1) * paddedSize - padding) / atlasSize;
+            const v1 = ((texCoord.row + 1) * paddedSize - padding) / atlasSize;
+
+            return [
+                [u0, v1], [u1, v1], [u1, v0], [u0, v0]
+            ];
+        }
+
+        // Generátor texturové atlasy (16x16 px per textura)
+        function generateTextureAtlas(worldSeed) {
+            const tileSize = 16;
+            const padding = 1; // 1px bezpečnostní okraj
+            const paddedSize = tileSize + padding * 2; // 18x18 px na dlaždici
+            const atlasCols = 8;
+            const atlasRows = 8;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = atlasCols * paddedSize;
+            canvas.height = atlasRows * paddedSize;
+            const ctx = canvas.getContext('2d');
+
+            const textures = [
+                { id: 1, col: 0, row: 0, type: 'grass_top' },
+                { id: 2, col: 1, row: 0, type: 'grass_side' },
+                { id: 3, col: 2, row: 0, type: 'dirt' },
+                { id: 4, col: 3, row: 0, type: 'stone' },
+                { id: 5, col: 4, row: 0, type: 'log_top' },
+                { id: 6, col: 5, row: 0, type: 'log_side' },
+                { id: 7, col: 6, row: 0, type: 'leaves' }
+            ];
+
+            textures.forEach(tex => {
+                const rng = new JavaRandom(tex.id * worldSeed);
+
+                // 1. Vygenerujeme čistou 16x16 texturu
+                const tileCanvas = document.createElement('canvas');
+                tileCanvas.width = tileSize;
+                tileCanvas.height = tileSize;
+                const tileCtx = tileCanvas.getContext('2d');
+                const imgData = tileCtx.createImageData(tileSize, tileSize);
+                const data = imgData.data;
+
+                for (let y = 0; y < tileSize; y++) {
+                    for (let x = 0; x < tileSize; x++) {
+                        const idx = (y * tileSize + x) * 4;
+                        let r = 0, g = 0, b = 0, a = 255;
+
+                        const n1 = rng.nextFloat() - 0.5;
+                        const n2 = rng.nextFloat() - 0.5;
+
+                        if (tex.type === 'dirt') {
+                            r = 120 + n1 * 40;
+                            g = 85 + n1 * 30 + n2 * 10;
+                            b = 55 + n1 * 25;
+                        } else if (tex.type === 'grass_top') {
+                            r = 80 + n1 * 30;
+                            g = 160 + n1 * 50 + n2 * 20;
+                            b = 60 + n1 * 25;
+                        } else if (tex.type === 'grass_side') {
+                            const grassDepth = 3 + Math.floor((n1 + 0.5) * 2.5);
+                            if (y < grassDepth || (y === grassDepth && rng.nextFloat() > 0.4)) {
+                                r = 80 + n1 * 30;
+                                g = 160 + n1 * 50;
+                                b = 60 + n1 * 25;
+                            } else {
+                                r = 120 + n1 * 40;
+                                g = 85 + n1 * 30;
+                                b = 55 + n1 * 25;
+                            }
+                        } else if (tex.type === 'stone') {
+                            let val = 128 + n1 * 50;
+                            if (rng.nextFloat() < 0.08) val -= 35;
+                            if (rng.nextFloat() < 0.06) val += 30;
+                            r = g = b = val;
+                        } else if (tex.type === 'log_top') {
+                            const dx = x - 7.5;
+                            const dy = y - 7.5;
+                            const dist = Math.sqrt(dx * dx + dy * dy);
+                            if (dist >= 6.8) {
+                                r = 90 + n1 * 25;
+                                g = 65 + n1 * 20;
+                                b = 35 + n1 * 15;
+                            } else if (Math.floor(dist) % 2 === 0) {
+                                r = 140 + n1 * 25;
+                                g = 105 + n1 * 20;
+                                b = 60 + n1 * 15;
+                            } else {
+                                r = 175 + n1 * 25;
+                                g = 135 + n1 * 20;
+                                b = 80 + n1 * 15;
+                            }
+                        } else if (tex.type === 'log_side') {
+                            const verticalGrain = Math.sin(x * 1.2) * 15 + n1 * 35;
+                            r = 100 + verticalGrain;
+                            g = 75 + verticalGrain * 0.8;
+                            b = 45 + verticalGrain * 0.6;
+                        } else if (tex.type === 'leaves') {
+                            r = 45 + n1 * 35;
+                            g = 130 + n1 * 60 + n2 * 20;
+                            b = 45 + n1 * 35;
+                            if (rng.nextFloat() < 0.15) {
+                                a = 0;
+                            }
+                        }
+
+                        data[idx] = Math.max(0, Math.min(255, r));
+                        data[idx + 1] = Math.max(0, Math.min(255, g));
+                        data[idx + 2] = Math.max(0, Math.min(255, b));
+                        data[idx + 3] = a;
+                    }
+                }
+                tileCtx.putImageData(imgData, 0, 0);
+
+                // 2. Vykreslení středu textury na atlas
+                const destX = tex.col * paddedSize + padding;
+                const destY = tex.row * paddedSize + padding;
+                ctx.drawImage(tileCanvas, destX, destY);
+
+                // 3. Roztažení okrajů (Edge Extrusion) do paddingu
+                ctx.drawImage(tileCanvas, 0, 0, tileSize, 1, destX, destY - 1, tileSize, 1); // Horní
+                ctx.drawImage(tileCanvas, 0, tileSize - 1, tileSize, 1, destX, destY + tileSize, tileSize, 1); // Dolní
+                ctx.drawImage(tileCanvas, 0, 0, 1, tileSize, destX - 1, destY, 1, tileSize); // Levý
+                ctx.drawImage(tileCanvas, tileSize - 1, 0, 1, tileSize, destX + tileSize, destY, 1, tileSize); // Pravý
+
+                // Rohy
+                ctx.drawImage(tileCanvas, 0, 0, 1, 1, destX - 1, destY - 1, 1, 1);
+                ctx.drawImage(tileCanvas, tileSize - 1, 0, 1, 1, destX + tileSize, destY - 1, 1, 1);
+                ctx.drawImage(tileCanvas, 0, tileSize - 1, 1, 1, destX - 1, destY + tileSize, 1, 1);
+                ctx.drawImage(tileCanvas, tileSize - 1, tileSize - 1, 1, 1, destX + tileSize, destY + tileSize, 1, 1);
+            });
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.magFilter = THREE.NearestFilter;
+            texture.minFilter = THREE.NearestFilter;
+            texture.generateMipmaps = false;
+
+            return texture;
+        }
+
+
+        function getTileUVs(col, row) {
+            const tileSize = 16;
+            const padding = 1;
+            const paddedSize = tileSize + padding * 2; // 18 px
+            const atlasWidth = 8 * paddedSize;  // 144 px
+            const atlasHeight = 8 * paddedSize; // 144 px
+
+            const x = col * paddedSize + padding;
+            const y = row * paddedSize + padding;
+
+            const u0 = x / atlasWidth;
+            const u1 = (x + tileSize) / atlasWidth;
+            const v0 = 1 - (y + tileSize) / atlasHeight;
+            const v1 = 1 - y / atlasHeight;
+
+            return { u0, u1, v0, v1 };
+        }
+
+        function getBlockFaceTile(tile, faceIdx) {
+            if (tile === BLOCKS.GRASS) {
+                if (faceIdx === 0) return { col: 0, row: 0 }; // Top
+                if (faceIdx === 1) return { col: 2, row: 0 }; // Bottom
+                return { col: 1, row: 0 };                     // Side
+            }
+            if (tile === BLOCKS.DIRT) return { col: 2, row: 0 };
+            if (tile === BLOCKS.STONE) return { col: 3, row: 0 };
+            if (tile === BLOCKS.LOG) {
+                if (faceIdx === 0 || faceIdx === 1) return { col: 4, row: 0 };
+                return { col: 5, row: 0 };
+            }
+            if (tile === BLOCKS.LEAVES) return { col: 6, row: 0 };
+            return { col: 2, row: 0 };
+        }
+
+        // ==========================================
+        // 3. CHUNK DATA
+        // ==========================================
+        class ChunkData {
+            constructor(cx, cz) {
+                this.cx = cx;
+                this.cz = cz;
+                // Pole subchunků pro vertikální řez (každý 16x16x16)
+                this.subchunks = new Array(SUBCHUNKS_PER_COLUMN);
+                for (let i = 0; i < SUBCHUNKS_PER_COLUMN; i++) {
+                    this.subchunks[i] = new Uint8Array(CHUNK_SIZE * SUBCHUNK_HEIGHT * CHUNK_SIZE);
+                }
+                this.generated = false;
+                this.dirty = new Array(SUBCHUNKS_PER_COLUMN).fill(true);
+            }
+
+            getSubchunkIndex(x, y, z) {
+                return x + (y % SUBCHUNK_HEIGHT) * CHUNK_SIZE + z * CHUNK_SIZE * SUBCHUNK_HEIGHT;
+            }
+
+            getTile(x, y, z) {
+                if (x < 0 || x >= CHUNK_SIZE || y < 0 || y >= CHUNK_HEIGHT || z < 0 || z >= CHUNK_SIZE) {
+                    return BLOCKS.AIR;
+                }
+                const subY = Math.floor(y / SUBCHUNK_HEIGHT);
+                return this.subchunks[subY][this.getSubchunkIndex(x, y, z)];
+            }
+
+            setTile(x, y, z, type) {
+                if (x >= 0 && x < CHUNK_SIZE && y >= 0 && y < CHUNK_HEIGHT && z >= 0 && z < CHUNK_SIZE) {
+                    const subY = Math.floor(y / SUBCHUNK_HEIGHT);
+                    this.subchunks[subY][this.getSubchunkIndex(x, y, z)] = type;
+                    this.dirty[subY] = true;
+                }
+            }
+        }
+
+        // ==========================================
+        // 4. LEVEL
+        // ==========================================
+        class Level {
+            constructor(seed) {
+                this.seed = seed;
+                this.chunksData = new Map();
+                this.noiseFilter1 = new PerlinNoiseFilter(4);
+                this.noiseFilter2 = new PerlinNoiseFilter(4);
+                const javaRng = new JavaRandom(seed);
+                this.noiseMap1 = this.noiseFilter1.read(256, 256, javaRng);
+                this.noiseMap2 = this.noiseFilter2.read(256, 256, new JavaRandom(javaRng.nextInt()));
+            }
+
+            sampleNoiseSmooth(map, x, z) {
+                const w = 256, h = 256;
+                const fx = ((x % w) + w) % w;
+                const fz = ((z % h) + h) % h;
+                const x0 = Math.floor(fx), z0 = Math.floor(fz);
+                const x1 = (x0 + 1) % w, z1 = (z0 + 1) % h;
+                const tx = fx - x0, tz = fz - z0;
+                const v00 = map[x0 + z0 * w], v10 = map[x1 + z0 * w];
+                const v01 = map[x0 + z1 * w], v11 = map[x1 + z1 * w];
+                const top = v00 * (1 - tx) + v10 * tx;
+                const bottom = v01 * (1 - tx) + v11 * tx;
+                return (top * (1 - tz) + bottom * tz) / 255;
+            }
+
+            getChunkKey(cx, cz) {
+                return `${cx},${cz}`;
+            }
+
+            getOrCreateChunkData(cx, cz) {
+                const key = this.getChunkKey(cx, cz);
+                if (!this.chunksData.has(key)) {
+                    this.chunksData.set(key, new ChunkData(cx, cz));
+                }
+                return this.chunksData.get(key);
+            }
+
+            getHeight(worldX, worldZ) {
+                const scale = 16.0;
+                const n1 = this.sampleNoiseSmooth(this.noiseMap1, worldX / scale, worldZ / scale);
+                const n2 = this.sampleNoiseSmooth(this.noiseMap2, worldX / (scale * 0.5), worldZ / (scale * 0.5));
+                const baseHeight = 22;
+                const mountainHeight = Math.pow(n1, 2) * 28;
+                const hills = n2 * 8;
+                return Math.floor(baseHeight + mountainHeight + hills);
+            }
+
+            getTile(worldX, worldY, worldZ) {
+                const cx = Math.floor(worldX / CHUNK_SIZE);
+                const cz = Math.floor(worldZ / CHUNK_SIZE);
+                const localX = worldX - cx * CHUNK_SIZE;
+                const localZ = worldZ - cz * CHUNK_SIZE;
+                const key = this.getChunkKey(cx, cz);
+                const chunk = this.chunksData.get(key);
+                if (!chunk) return BLOCKS.AIR;
+                return chunk.getTile(localX, worldY, localZ);
+            }
+
+            setTile(worldX, worldY, worldZ, type) {
+                const cx = Math.floor(worldX / CHUNK_SIZE);
+                const cz = Math.floor(worldZ / CHUNK_SIZE);
+                const localX = worldX - cx * CHUNK_SIZE;
+                const localZ = worldZ - cz * CHUNK_SIZE;
+                const key = this.getChunkKey(cx, cz);
+                const chunk = this.chunksData.get(key);
+                if (chunk) {
+                    chunk.setTile(localX, worldY, localZ, type);
+                    
+                    // Označení subchunků jako dirty (včetně sousedních při okrajích)
+                    const subY = Math.floor(worldY / SUBCHUNK_HEIGHT);
+                    this.markSubChunkDirty(cx, subY, cz);
+                    if (localX === 0) this.markSubChunkDirty(cx - 1, subY, cz);
+                    if (localX === CHUNK_SIZE - 1) this.markSubChunkDirty(cx + 1, subY, cz);
+                    if (localZ === 0) this.markSubChunkDirty(cx, subY, cz - 1);
+                    if (localZ === CHUNK_SIZE - 1) this.markSubChunkDirty(cx, subY, cz + 1);
+                    if (worldY % SUBCHUNK_HEIGHT === 0 && subY > 0) this.markSubChunkDirty(cx, subY - 1, cz);
+                    if (worldY % SUBCHUNK_HEIGHT === SUBCHUNK_HEIGHT - 1 && subY < SUBCHUNKS_PER_COLUMN - 1) this.markSubChunkDirty(cx, subY + 1, cz);
+                }
+            }
+
+            markSubChunkDirty(cx, subY, cz) {
+                const key = this.getChunkKey(cx, cz);
+                const chunk = this.chunksData.get(key);
+                if (chunk && subY >= 0 && subY < SUBCHUNKS_PER_COLUMN) {
+                    chunk.dirty[subY] = true;
+                }
+            }
+
+            generateChunk(cx, cz) {
+                const chunkData = this.getOrCreateChunkData(cx, cz);
+                if (chunkData.generated) return chunkData;
+                chunkData.generated = true;
+
+                const worldStartX = cx * CHUNK_SIZE;
+                const worldStartZ = cz * CHUNK_SIZE;
+
+                for (let x = 0; x < CHUNK_SIZE; x++) {
+                    for (let z = 0; z < CHUNK_SIZE; z++) {
+                        const worldX = worldStartX + x;
+                        const worldZ = worldStartZ + z;
+                        const groundY = Math.floor(this.getHeight(worldX, worldZ));
+
+                        for (let y = 0; y < CHUNK_HEIGHT; y++) {
+                            if (y < groundY - 4) {
+                                this.setTile(worldX, y, worldZ, BLOCKS.STONE);
+                            } else if (y < groundY) {
+                                this.setTile(worldX, y, worldZ, BLOCKS.DIRT);
+                            } else if (y === groundY) {
+                                this.setTile(worldX, y, worldZ, BLOCKS.GRASS);
+                            }
+                        }
+                    }
+                }
+
+                // Generování stromů
+                const treeRand = new JavaRandom(this.seed + cx * 73856093 ^ cz * 19349663);
+                const treeCount = treeRand.nextInt(3);
+                for (let i = 0; i < treeCount; i++) {
+                    const tx = treeRand.nextInt(CHUNK_SIZE);
+                    const tz = treeRand.nextInt(CHUNK_SIZE);
+                    const worldX = worldStartX + tx;
+                    const worldZ = worldStartZ + tz;
+                    const groundY = this.getHeight(worldX, worldZ);
+                    if (groundY > 0 && groundY < CHUNK_HEIGHT - 10) {
+                        this.spawnTree(worldX, groundY + 1, worldZ, treeRand);
+                    }
+                }
+
+                for (let sy = 0; sy < SUBCHUNKS_PER_COLUMN; sy++) {
+                    chunkData.dirty[sy] = true;
+                }
+
+                return chunkData;
+            }
+
+            spawnTree(worldX, startY, worldZ, rand) {
+                const height = 4 + rand.nextInt(2);
+                for (let y = 0; y < height; y++) {
+                    this.setTile(worldX, startY + y, worldZ, BLOCKS.LOG);
+                }
+                for (let ly = startY + height - 2; ly <= startY + height + 1; ly++) {
+                    const layer = ly - (startY + height);
+                    const radius = layer > 0 ? 1 : 2;
+                    for (let lx = -radius; lx <= radius; lx++) {
+                        for (let lz = -radius; lz <= radius; lz++) {
+                            if (Math.abs(lx) === radius && Math.abs(lz) === radius && (layer > 0 || rand.nextBoolean())) {
+                                continue;
+                            }
+                            const targetX = worldX + lx;
+                            const targetY = ly;
+                            const targetZ = worldZ + lz;
+                            if (this.getTile(targetX, targetY, targetZ) === BLOCKS.AIR) {
+                                this.setTile(targetX, targetY, targetZ, BLOCKS.LEAVES);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // ==========================================
+        // 5. CHUNK RENDERER S TEXTURAMI
+        // ==========================================
+        class Chunk {
+            constructor(chunkData, level, scene, sharedMaterial) {
+                this.chunkData = chunkData;
+                this.level = level;
+                this.scene = scene;
+                this.material = sharedMaterial;
+
+                this.mesh = new THREE.Mesh(
+                    new THREE.BufferGeometry(),
+                    this.material
+                );
+
+                this.mesh.position.set(chunkData.cx * CHUNK_SIZE, 0, chunkData.cz * CHUNK_SIZE);
+                this.scene.add(this.mesh);
+
+                this.rebuild();
+            }
+
+            rebuild() {
+                const positions = [];
+                const uvs = [];
+                const normals = [];
+
+                const faces = [
+                    { dir: [0, 1, 0], norm: [0, 1, 0], verts: [[0, 1, 1], [1, 1, 1], [1, 1, 0], [0, 1, 0]] }, // Top (+Y)
+                    { dir: [0, -1, 0], norm: [0, -1, 0], verts: [[0, 0, 0], [1, 0, 0], [1, 0, 1], [0, 0, 1]] }, // Bottom (-Y)
+                    { dir: [0, 0, -1], norm: [0, 0, -1], verts: [[0, 1, 0], [1, 1, 0], [1, 0, 0], [0, 0, 0]] }, // North (-Z)
+                    { dir: [0, 0, 1], norm: [0, 0, 1], verts: [[1, 1, 1], [0, 1, 1], [0, 0, 1], [1, 0, 1]] },  // South (+Z) - opraveno pořadí Y
+                    { dir: [-1, 0, 0], norm: [-1, 0, 0], verts: [[0, 1, 1], [0, 1, 0], [0, 0, 0], [0, 0, 1]] }, // West (-X)
+                    { dir: [1, 0, 0], norm: [1, 0, 0], verts: [[1, 1, 0], [1, 1, 1], [1, 0, 1], [1, 0, 0]] }   // East (+X) - opraveno pořadí Y
+                ];
+
+                const worldOffsetX = this.chunkData.cx * CHUNK_SIZE;
+                const worldOffsetZ = this.chunkData.cz * CHUNK_SIZE;
+
+                for (let x = 0; x < CHUNK_SIZE; x++) {
+                    for (let y = 0; y < CHUNK_HEIGHT; y++) {
+                        for (let z = 0; z < CHUNK_SIZE; z++) {
+                            const tile = this.chunkData.getTile(x, y, z);
+                            if (tile === BLOCKS.AIR) continue;
+
+                            const currWorldX = worldOffsetX + x;
+                            const currWorldZ = worldOffsetZ + z;
+
+                            for (let fIdx = 0; fIdx < faces.length; fIdx++) {
+                                const face = faces[fIdx];
+                                const wx = currWorldX + face.dir[0];
+                                const wy = y + face.dir[1];
+                                const wz = currWorldZ + face.dir[2];
+
+                                const neighbor = this.level.getTile(wx, wy, wz);
+                                if (neighbor === BLOCKS.AIR || (tile !== BLOCKS.LEAVES && neighbor === BLOCKS.LEAVES)) {
+                                    const tilePos = getBlockFaceTile(tile, fIdx);
+                                    const { u0, u1, v0, v1 } = getTileUVs(tilePos.col, tilePos.row);
+
+                                    const faceUVs = [
+                                        [u0, v1],
+                                        [u1, v1],
+                                        [u1, v0],
+                                        [u0, v0]
+                                    ];
+
+                                    const indices = [0, 1, 2, 0, 2, 3];
+                                    for (const idx of indices) {
+                                        const v = face.verts[idx];
+                                        positions.push(x + v[0], y + v[1], z + v[2]);
+                                        uvs.push(faceUVs[idx][0], faceUVs[idx][1]);
+                                        normals.push(...face.norm);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                const geo = this.mesh.geometry;
+                geo.dispose();
+                geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+                geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+                geo.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3));
+
+                this.chunkData.dirty = false;
+            }
+
+            destroy() {
+                this.scene.remove(this.mesh);
+                this.mesh.geometry.dispose();
+            }
+        }
+
+        // ==========================================
+        // 6. LEVEL RENDERER
+        // ==========================================
+        class LevelRenderer {
+            constructor(level, scene, renderDistance = 8, sharedMaterial) {
+                this.level = level;
+                this.scene = scene;
+                this.renderDistance = renderDistance;
+                this.sharedMaterial = sharedMaterial;
+                this.renderedChunks = new Map();
+            }
+
+            update(playerX, playerZ) {
+                const centerCx = Math.floor(playerX / CHUNK_SIZE);
+                const centerCz = Math.floor(playerZ / CHUNK_SIZE);
+
+                const activeKeys = new Set();
+                const candidates = [];
+
+                for (let x = -this.renderDistance; x <= this.renderDistance; x++) {
+                    for (let z = -this.renderDistance; z <= this.renderDistance; z++) {
+                        const cx = centerCx + x;
+                        const cz = centerCz + z;
+                        const key = `${cx},${cz}`;
+                        activeKeys.add(key);
+
+                        const chunkData = this.level.chunksData.get(key);
+                        const chunkMesh = this.renderedChunks.get(key);
+
+                        const needsGen = !chunkData || !chunkData.generated;
+                        const needsBuild = !chunkMesh || (chunkData && chunkData.dirty);
+
+                        if (needsGen || needsBuild) {
+                            const distSq = x * x + z * z;
+                            candidates.push({ cx, cz, key, distSq });
+                        }
+                    }
+                }
+
+                for (const [key, chunk] of this.renderedChunks.entries()) {
+                    if (!activeKeys.has(key)) {
+                        chunk.destroy();
+                        this.renderedChunks.delete(key);
+                    }
+                }
+
+                candidates.sort((a, b) => a.distSq - b.distSq);
+
+                let processed = 0;
+                const maxPerFrame = 2;
+
+                for (const item of candidates) {
+                    if (processed >= maxPerFrame) break;
+
+                    const { cx, cz, key } = item;
+                    const chunkData = this.level.generateChunk(cx, cz);
+
+                    let chunkMesh = this.renderedChunks.get(key);
+                    if (!chunkMesh) {
+                        chunkMesh = new Chunk(chunkData, this.level, this.scene, this.sharedMaterial);
+                        this.renderedChunks.set(key, chunkMesh);
+                        processed++;
+                    } else if (chunkData.dirty) {
+                        chunkMesh.rebuild();
+                        processed++;
+                    }
+                }
+            }
+        }
+
+        // ==========================================
+        // 7. HRÁČ S FYZIKOU
+        // ==========================================
+        class Player {
+            constructor(x, y, z) {
+                this.width = 0.6;
+                this.height = 1.8;
+                this.eyeHeight = 1.62;
+
+                this.x = x;
+                this.y = y;
+                this.z = z;
+
+                this.vx = 0;
+                this.vy = 0;
+                this.vz = 0;
+
+                this.onGround = false;
+
+                this.aabb = new AABB(
+                    x - this.width / 2, y, z - this.width / 2,
+                    x + this.width / 2, y + this.height, z + this.width / 2
+                );
+            }
+
+            update(dt, keys, yaw, level, camera) {
+                this.vy -= 25.0 * dt;
+
+                if (keys['Space'] && this.onGround) {
+                    this.vy = 8.5;
+                    this.onGround = false;
+                }
+
+                let moveDirX = 0;
+                let moveDirZ = 0;
+                if (keys['KeyW']) moveDirZ += 1;
+                if (keys['KeyS']) moveDirZ -= 1;
+                if (keys['KeyA']) moveDirX -= 1;
+                if (keys['KeyD']) moveDirX += 1;
+
+                const len = Math.hypot(moveDirX, moveDirZ);
+                if (len > 0) {
+                    moveDirX /= len;
+                    moveDirZ /= len;
+                }
+
+                const sin = Math.sin(yaw);
+                const cos = Math.cos(yaw);
+
+                const forwardX = -sin;
+                const forwardZ = -cos;
+                const rightX = cos;
+                const rightZ = -sin;
+
+                const speed = 6.0;
+                const targetVx = (forwardX * moveDirZ + rightX * moveDirX) * speed;
+                const targetVz = (forwardZ * moveDirZ + rightZ * moveDirX) * speed;
+
+                const accel = this.onGround ? 12.0 : 3.0;
+                this.vx += (targetVx - this.vx) * Math.min(accel * dt, 1.0);
+                this.vz += (targetVz - this.vz) * Math.min(accel * dt, 1.0);
+
+                let dx = this.vx * dt;
+                let dy = this.vy * dt;
+                let dz = this.vz * dt;
+
+                const origDx = dx;
+                const origDy = dy;
+                const origDz = dz;
+
+                const broad = this.aabb.expand(dx, dy, dz);
+                const minX = Math.floor(broad.x0);
+                const maxX = Math.floor(broad.x1);
+                const minY = Math.floor(broad.y0);
+                const maxY = Math.floor(broad.y1);
+                const minZ = Math.floor(broad.z0);
+                const maxZ = Math.floor(broad.z1);
+
+                const obstacleBoxes = [];
+                for (let bx = minX; bx <= maxX; bx++) {
+                    for (let by = minY; by <= maxY; by++) {
+                        for (let bz = minZ; bz <= maxZ; bz++) {
+                            const tile = level.getTile(bx, by, bz);
+                            if (tile !== BLOCKS.AIR) {
+                                obstacleBoxes.push(new AABB(bx, by, bz, bx + 1, by + 1, bz + 1));
+                            }
+                        }
+                    }
+                }
+
+                for (const box of obstacleBoxes) {
+                    dy = box.clipYCollide(this.aabb, dy);
+                }
+                this.aabb.move(0, dy, 0);
+
+                this.onGround = origDy < 0 && dy !== origDy;
+                if (dy !== origDy) {
+                    this.vy = 0;
+                }
+
+                for (const box of obstacleBoxes) {
+                    dx = box.clipXCollide(this.aabb, dx);
+                }
+                this.aabb.move(dx, 0, 0);
+                if (dx !== origDx) {
+                    this.vx = 0;
+                }
+
+                for (const box of obstacleBoxes) {
+                    dz = box.clipZCollide(this.aabb, dz);
+                }
+                this.aabb.move(0, 0, dz);
+                if (dz !== origDz) {
+                    this.vz = 0;
+                }
+
+                if (this.aabb.y0 < -20) {
+                    this.aabb.move(0, 100, 0);
+                    this.vy = 0;
+                }
+
+                this.x = (this.aabb.x0 + this.aabb.x1) / 2;
+                this.y = this.aabb.y0;
+                this.z = (this.aabb.z0 + this.aabb.z1) / 2;
+
+                camera.position.set(this.x, this.y + this.eyeHeight, this.z);
+            }
+        }
+
+        // ==========================================
+        // 8. GAME APP & STATISTIKY
+        // ==========================================
+        class Game {
+            constructor() {
+                this.scene = new THREE.Scene();
+
+                const skyColor = 0x6eb1ff;
+                this.scene.background = new THREE.Color(skyColor);
+
+                this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: false });
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+                this.renderer.setClearColor(0x80b0ff);
+                document.body.appendChild(this.renderer.domElement);
+
+                const ambient = new THREE.AmbientLight(0xffffff, 0.7);
+                const sun = new THREE.DirectionalLight(0xffffff, 0.7);
+                sun.position.set(30, 60, 20);
+                this.scene.add(ambient, sun);
+
+                // Generování textury s unikátním seedem pro každou
+                this.textureAtlas = generateTextureAtlas(WORLD_SEED);
+                this.sharedMaterial = new THREE.MeshLambertMaterial({
+                    map: this.textureAtlas,
+                    alphaTest: 0.5,
+                    transparent: false
+                });
+
+                this.level = new Level(WORLD_SEED);
+
+                this.renderDistances = [2, 4, 6, 8, 10, 12, 24];
+                this.renderDistanceIdx = 3;
+                const initialDist = this.renderDistances[this.renderDistanceIdx];
+
+                this.levelRenderer = new LevelRenderer(this.level, this.scene, initialDist, this.sharedMaterial);
+
+                this.scene.fog = new THREE.Fog(skyColor, 1, 1);
+                this.updateFog();
+
+                const startX = 8, startZ = 8;
+                const startY = this.level.getHeight(startX, startZ) + 2;
+
+                this.player = new Player(startX, startY, startZ);
+                this.selectedBlock = BLOCKS.GRASS;
+
+                const wireGeo = new THREE.BoxGeometry(1.002, 1.002, 1.002);
+                const wireMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+                this.selectionBox = new THREE.LineSegments(new THREE.EdgesGeometry(wireGeo), wireMat);
+                this.selectionBox.visible = false;
+                this.scene.add(this.selectionBox);
+
+                this.keys = {};
+                this.yaw = 0;
+                this.pitch = 0;
+                this.setupInputs();
+
+                this.clock = new THREE.Clock();
+
+                // Výpočet FPS a měřiče statistik
+                this.fps = 0;
+                this.frameCount = 0;
+                this.lastFpsTime = performance.now();
+
+                window.addEventListener('resize', () => this.onResize());
+
+                this.loop();
+            }
+
+            updateFog() {
+                const distInUnits = this.levelRenderer.renderDistance * CHUNK_SIZE;
+                const maxDistance = (this.levelRenderer.renderDistance + 1) * CHUNK_SIZE;
+
+                this.scene.fog.near = distInUnits * 0.5;
+                this.scene.fog.far = distInUnits;
+
+                this.camera.far = maxDistance;
+                this.camera.updateProjectionMatrix();
+            }
+
+            pick(distance = 5.0) {
+                const start = new THREE.Vector3().copy(this.camera.position);
+                const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).normalize();
+
+                let x = Math.floor(start.x);
+                let y = Math.floor(start.y);
+                let z = Math.floor(start.z);
+
+                const stepX = dir.x > 0 ? 1 : -1;
+                const stepY = dir.y > 0 ? 1 : -1;
+                const stepZ = dir.z > 0 ? 1 : -1;
+
+                const tDeltaX = dir.x !== 0 ? Math.abs(1 / dir.x) : Infinity;
+                const tDeltaY = dir.y !== 0 ? Math.abs(1 / dir.y) : Infinity;
+                const tDeltaZ = dir.z !== 0 ? Math.abs(1 / dir.z) : Infinity;
+
+                let tMaxX = dir.x !== 0 ? (dir.x > 0 ? (x + 1 - start.x) : (start.x - x)) * tDeltaX : Infinity;
+                let tMaxY = dir.y !== 0 ? (dir.y > 0 ? (y + 1 - start.y) : (start.y - y)) * tDeltaY : Infinity;
+                let tMaxZ = dir.z !== 0 ? (dir.z > 0 ? (z + 1 - start.z) : (start.z - z)) * tDeltaZ : Infinity;
+
+                let f = -1;
+                let dist = 0;
+
+                const isPickable = (bx, by, bz) => this.level.getTile(bx, by, bz) > BLOCKS.AIR;
+
+                if (isPickable(x, y, z)) return { x: x, y: y, z: z, f: f };
+
+                while (dist < distance) {
+                    if (tMaxX < tMaxY) {
+                        if (tMaxX < tMaxZ) {
+                            dist = tMaxX;
+                            tMaxX += tDeltaX;
+                            x += stepX;
+                            f = stepX > 0 ? 4 : 5;
+                        } else {
+                            dist = tMaxZ;
+                            tMaxZ += tDeltaZ;
+                            z += stepZ;
+                            f = stepZ > 0 ? 2 : 3;
+                        }
+                    } else {
+                        if (tMaxY < tMaxZ) {
+                            dist = tMaxY;
+                            tMaxY += tDeltaY;
+                            y += stepY;
+                            f = stepY > 0 ? 0 : 1;
+                        } else {
+                            dist = tMaxZ;
+                            tMaxZ += tDeltaZ;
+                            z += stepZ;
+                            f = stepZ > 0 ? 2 : 3;
+                        }
+                    }
+
+                    if (dist > distance) break;
+                    if (isPickable(x, y, z)) return { x: x, y: y, z: z, f: f };
+                }
+                return null;
+            }
+
+            setupInputs() {
+                document.addEventListener('click', () => {
+                    if (document.pointerLockElement !== document.body) {
+                        document.body.requestPointerLock();
+                    }
+                });
+
+                document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+                document.addEventListener('mousemove', (e) => {
+                    if (document.pointerLockElement === document.body) {
+                        this.yaw -= e.movementX * 0.002;
+                        this.pitch -= e.movementY * 0.002;
+                        this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch));
+
+                        this.camera.rotation.order = "YXZ";
+                        this.camera.rotation.y = this.yaw;
+                        this.camera.rotation.x = this.pitch;
+                    }
+                });
+
+                document.addEventListener('mousedown', (e) => {
+                    if (document.pointerLockElement !== document.body) return;
+
+                    const hit = this.pick(5.0);
+                    if (!hit) return;
+
+                    if (e.button === 0) {
+                        this.level.setTile(hit.x, hit.y, hit.z, BLOCKS.AIR);
+                    } else if (e.button === 2) {
+                        let px = hit.x, py = hit.y, pz = hit.z;
+
+                        if (hit.f === 0) py--;
+                        else if (hit.f === 1) py++;
+                        else if (hit.f === 2) pz--;
+                        else if (hit.f === 3) pz++;
+                        else if (hit.f === 4) px--;
+                        else if (hit.f === 5) px++;
+
+                        const placedBox = new AABB(px, py, pz, px + 1, py + 1, pz + 1);
+                        if (!this.player.aabb.intersects(placedBox)) {
+                            this.level.setTile(px, py, pz, this.selectedBlock);
+                        }
+                    }
+                });
+
+                document.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                    if (e.code.startsWith('Digit')) {
+                        const num = parseInt(e.code.replace('Digit', ''));
+                        if (num >= 1 && num <= 5) {
+                            this.selectedBlock = num;
+                            document.getElementById('selected-block').innerText = BLOCK_NAMES[num];
+                        }
+                    }
+
+                    if (e.code === 'KeyF') {
+                        this.renderDistanceIdx = (this.renderDistanceIdx + 1) % this.renderDistances.length;
+                        const newDist = this.renderDistances[this.renderDistanceIdx];
+
+                        this.levelRenderer.renderDistance = newDist;
+                        this.updateFog();
+
+                        document.getElementById('render-distance-display').innerText = newDist;
+                    }
+                });
+
+                document.addEventListener('keyup', (e) => this.keys[e.code] = false);
+
+                document.addEventListener('wheel', (e) => {
+                    let next = this.selectedBlock + (e.deltaY > 0 ? 1 : -1);
+                    if (next > 5) next = 1;
+                    if (next < 1) next = 5;
+                    this.selectedBlock = next;
+                    document.getElementById('selected-block').innerText = BLOCK_NAMES[next];
+                });
+            }
+
+            loop() {
+                requestAnimationFrame(() => this.loop());
+
+                const dt = Math.min(this.clock.getDelta(), 0.1);
+
+                this.player.update(dt, this.keys, this.yaw, this.level, this.camera);
+
+                const hit = this.pick(5.0);
+                if (hit) {
+                    this.selectionBox.position.set(hit.x + 0.5, hit.y + 0.5, hit.z + 0.5);
+                    this.selectionBox.visible = true;
+                } else {
+                    this.selectionBox.visible = false;
+                }
+
+                this.levelRenderer.update(this.camera.position.x, this.camera.position.z);
+
+                this.renderer.render(this.scene, this.camera);
+
+                // --- Aktualizace Statistik ---
+                this.frameCount++;
+                const now = performance.now();
+                if (now - this.lastFpsTime >= 500) {
+                    this.fps = Math.round((this.frameCount * 1000) / (now - this.lastFpsTime));
+                    this.frameCount = 0;
+                    this.lastFpsTime = now;
+                }
+
+                document.getElementById('fps-display').innerText = this.fps;
+                document.getElementById('pos-display').innerText = `X: ${this.player.x.toFixed(1)}, Y: ${this.player.y.toFixed(1)}, Z: ${this.player.z.toFixed(1)}`;
+                document.getElementById('chunks-mem-display').innerText = this.level.chunksData.size;
+                document.getElementById('chunks-render-display').innerText = this.levelRenderer.renderedChunks.size;
+                document.getElementById('geo-display').innerText = this.renderer.info.memory.geometries;
+                document.getElementById('mat-display').innerText = this.renderer.info.programs ? this.renderer.info.programs.length : 2;
+                document.getElementById('drawcalls-display').innerText = this.renderer.info.render.calls;
+            }
+
+            onResize() {
+                this.camera.aspect = window.innerWidth / window.innerHeight;
+                this.camera.updateProjectionMatrix();
+                this.renderer.setSize(window.innerWidth, window.innerHeight);
+            }
+        }
+
+        new Game();
+    </script>
+</body>
+
+</html>
