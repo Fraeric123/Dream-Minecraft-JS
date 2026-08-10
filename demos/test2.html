@@ -471,8 +471,9 @@
         const BLOCK_NAMES = { 1: 'GRASS', 2: 'DIRT', 3: 'STONE', 4: 'LOG', 5: 'LEAVES' };
 
         const CHUNK_SIZE = 16;
-        const CHUNK_HEIGHT = 256;
-        const SUBCHUNK_HEIGHT = CHUNK_HEIGHT/2;
+        const CHUNK_HEIGHT = 128;
+        const SUBCHUNK_COUNT = 2;
+        const SUBCHUNK_HEIGHT = CHUNK_HEIGHT/SUBCHUNK_COUNT;
         const NUM_SUBCHUNKS = CHUNK_HEIGHT / SUBCHUNK_HEIGHT;
         const WORLD_SEED = Math.floor(Math.random() * JavaRandom.p2_48);
 
@@ -684,8 +685,8 @@
                     heightFactor += (selector - 0.1) * 1.5;
                 }
 
-                const minHeight = 16;
-                const maxHeight = 48;
+                const minHeight = 64;
+                const maxHeight = 100;
                 const normalized = (heightFactor + 1) / 2;
 
                 return Math.floor(minHeight + Math.max(0, Math.min(1, normalized)) * (maxHeight - minHeight));
@@ -1587,7 +1588,7 @@
                     this.selectionBox.visible = false;
                 }
 
-                this.level.time += dt * 2000;
+                this.level.time += dt * 200;
                 const angle = this.levelRenderer.calculateCelestialAngle(this.level.time);
                 const currentSkyColor = this.levelRenderer.getSkyColor(angle);
 
