@@ -1637,7 +1637,7 @@
                 candidates.sort((a, b) => a.distSq - b.distSq);
 
                 let processed = 0;
-                const maxPerFrame = 2;
+                const maxPerFrame = 1;
 
                 for (const item of candidates) {
                     if (processed >= maxPerFrame) break;
@@ -2070,7 +2070,9 @@
             constructor() {
                 this.assets = new AssetList();
 
-                this.assets.newAsset("clouds", "../assets/textures/clouds.png", Enum.AssetType.Texture)
+                this.assets.newAsset("clouds", "../assets/textures/clouds.png", Enum.AssetType.Texture);
+                this.assets.newAsset("sun", "../assets/textures/sun.png", Enum.AssetType.Texture);
+                this.assets.newAsset("moon", "../assets/textures/moon.png", Enum.AssetType.Texture);
 
                 this.asset_manager = new AssetManager(this);
 
@@ -2078,7 +2080,7 @@
 
                 const skyColor = new THREE.Color(0xc0d8ff);
                 this.fogColor = skyColor;
-                this.scene.background = skyColor;
+                this.scene.background = skyColor; // Fallback, sky dome shader překryje
 
                 this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 
@@ -2094,54 +2096,22 @@
 
                 this.skyGroup = new THREE.Group();
 
-                // --- SLUNCE ---
-                const sunGeo = new THREE.BoxGeometry(24, 24, 24);
-                const sunMat = new THREE.MeshBasicMaterial({
-                    color: 0xffffff,
-                    fog: false,           // Klíčové: mlha na Slunce nepůsobí
-                    depthWrite: false
-                });
-                const sunMesh = new THREE.Mesh(sunGeo, sunMat);
-
-                const glowGeo = new THREE.BoxGeometry(34, 34, 34);
-                const glowMat = new THREE.MeshBasicMaterial({
-                    color: 0xfff3a0,
-                    transparent: true,
-                    opacity: 0.45,
-                    fog: false,           // Klíčové: mlha neovlivní ani záři Slunce
-                    depthWrite: false
-                });
-                const glowMesh = new THREE.Mesh(glowGeo, glowMat);
-
+                // --- Slunce a Měsíc se vytvoří po načtení textur v init() ---
                 this.sunGroup = new THREE.Group();
-                this.sunGroup.add(sunMesh);
-                this.sunGroup.add(glowMesh);
-
-                // --- MĚSÍC ---
-                const moonGeo = new THREE.BoxGeometry(20, 20, 20);
-                const moonMat = new THREE.MeshBasicMaterial({
-                    color: 0xddddff,
-                    fog: false,
-                    depthWrite: false
-                });
-                const moonMesh = new THREE.Mesh(moonGeo, moonMat);
-
                 this.moonGroup = new THREE.Group();
-                this.moonGroup.add(moonMesh);
-
-                // Vzdálenost těles od kamery
-                const celestialDist = 200;
-
-                // Umístění Slunce a Měsíce naproti sobě
-                const sunDirection = new THREE.Vector3(0.5, 0.9, 0.3).normalize();
-                this.sunGroup.position.copy(sunDirection).multiplyScalar(celestialDist);
-                this.moonGroup.position.copy(sunDirection).multiplyScalar(-celestialDist); // Opačná strana
 
                 this.skyGroup.add(this.sunGroup);
                 this.skyGroup.add(this.moonGroup);
                 this.scene.add(this.skyGroup);
 
-                this.sunMesh = sunMesh;
+                // Sky elementy nesmí být ořezány frustumem
+                this.skyGroup.frustumCulled = false;
+                this.sunGroup.frustumCulled = false;
+                this.moonGroup.frustumCulled = false;
+
+                // Vytvoření hvězd a sky dome
+                this.createStars();
+                this.createSkyDome();
 
                 const outlineVertexShader = `
                     varying vec2 vUv;
@@ -2227,6 +2197,8 @@
                     }
                 `;
 
+                const sunDirection = new THREE.Vector3(0.5, 0.9, 0.3).normalize();
+
                 this.textureAtlas = generateTextureAtlas(WORLD_SEED);
                 this.textureAtlas.colorSpace = THREE.SRGBColorSpace;
 
@@ -2301,8 +2273,121 @@
                     this.sharedMaterial.uniforms.vLight
                 }
 
-                this.camera.far = (this.levelRenderer.renderDistance + 2) * CHUNK_SIZE;
+                // Camera far musí pokrýt i sky dome (radius 450) + hvězdy (radius 500)
+                const terrainFar = (this.levelRenderer.renderDistance + 2) * CHUNK_SIZE;
+                this.camera.far = Math.max(600, terrainFar);
                 this.camera.updateProjectionMatrix();
+            }
+
+            createStars() {
+                const starCount = 1500;
+                const starRadius = 400;
+                const positions = new Float32Array(starCount * 3);
+
+                for (let i = 0; i < starCount; i++) {
+                    // Jen horní hemisféra (y > 0) — hvězdy pod horizontem ne
+                    const theta = Math.random() * Math.PI * 2;
+                    const phi = Math.random() * Math.PI * 0.45; // 0 až ~80° od zenitu
+                    const r = starRadius;
+
+                    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+                    positions[i * 3 + 1] = r * Math.cos(phi); // y = nahoru
+                    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+                }
+
+                const starGeo = new THREE.BufferGeometry();
+                starGeo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+                const starMat = new THREE.PointsMaterial({
+                    color: 0xffffff,
+                    size: 2.0,
+                    sizeAttenuation: false,
+                    transparent: true,
+                    opacity: 0,
+                    fog: false,
+                    depthWrite: false,
+                    depthTest: false
+                });
+
+                this.starsMesh = new THREE.Points(starGeo, starMat);
+                this.starsMesh.frustumCulled = false;
+                this.skyGroup.add(this.starsMesh);
+            }
+
+            createSkyDome() {
+                const skyDomeGeo = new THREE.SphereGeometry(450, 32, 32);
+
+                const skyDomeVertexShader = `
+                    varying vec3 vWorldPosition;
+                    void main() {
+                        vec4 worldPos = modelMatrix * vec4(position, 1.0);
+                        vWorldPosition = worldPos.xyz;
+                        gl_Position = projectionMatrix * viewMatrix * worldPos;
+                    }
+                `;
+
+                const skyDomeFragmentShader = `
+                    uniform float uSunHeight;
+                    uniform float uTime;
+                    varying vec3 vWorldPosition;
+
+                    void main() {
+                        vec3 dir = normalize(vWorldPosition - cameraPosition);
+                        float height = dir.y;
+
+                        // Denní obloha: jasně modrá nahoře, světlejší u horizontu
+                        vec3 dayTop = vec3(0.25, 0.48, 1.0);
+                        vec3 dayHorizon = vec3(0.65, 0.82, 1.0);
+
+                        // Soumrak: teplé oranžovo-červené tóny
+                        vec3 sunsetTop = vec3(0.15, 0.15, 0.45);
+                        vec3 sunsetHorizon = vec3(0.85, 0.35, 0.12);
+
+                        // Noc: tmavě modrá až černá
+                        vec3 nightTop = vec3(0.01, 0.01, 0.04);
+                        vec3 nightHorizon = vec3(0.04, 0.04, 0.1);
+
+                        // Výpočet přechodů na základě výšky slunce
+                        float dayFactor = smoothstep(-0.1, 0.3, uSunHeight);
+                        float sunsetFactor = smoothstep(-0.15, 0.0, uSunHeight) * (1.0 - smoothstep(0.0, 0.25, uSunHeight));
+                        float nightFactor = 1.0 - smoothstep(-0.2, 0.0, uSunHeight);
+
+                        // Vertikální přechod (od horizontu k zenitu)
+                        float vertFade = max(height, 0.0);
+                        vertFade = pow(vertFade, 0.6); // Rychlejší přechod k horizontu
+
+                        vec3 dayColor = mix(dayHorizon, dayTop, vertFade);
+                        vec3 sunsetColor = mix(sunsetHorizon, sunsetTop, vertFade);
+                        vec3 nightColor = mix(nightHorizon, nightTop, vertFade);
+
+                        // Kombinace barev
+                        vec3 finalColor = nightColor;
+                        finalColor = mix(finalColor, sunsetColor, sunsetFactor);
+                        finalColor = mix(finalColor, dayColor, dayFactor);
+
+                        // Jemné přidání teplé barvy u horizontu při soumraku
+                        float horizonGlow = exp(-abs(height) * 8.0) * sunsetFactor;
+                        finalColor += vec3(0.5, 0.2, 0.05) * horizonGlow;
+
+                        gl_FragColor = vec4(finalColor, 1.0);
+                    }
+                `;
+
+                const skyDomeMat = new THREE.ShaderMaterial({
+                    vertexShader: skyDomeVertexShader,
+                    fragmentShader: skyDomeFragmentShader,
+                    uniforms: {
+                        uSunHeight: { value: 0.5 },
+                        uTime: { value: 0.0 }
+                    },
+                    side: THREE.BackSide,
+                    depthWrite: false,
+                    fog: false
+                });
+
+                this.skyDome = new THREE.Mesh(skyDomeGeo, skyDomeMat);
+                this.skyDome.frustumCulled = false;
+                this.scene.add(this.skyDome);
             }
 
             pick(distance = 5.0) {
@@ -2421,7 +2506,6 @@
 
                 this.level.time += dt * 200;
                 const angle = this.levelRenderer.calculateCelestialAngle(this.level.time);
-                const currentSkyColor = this.levelRenderer.getSkyColor(angle);
 
                 // 2. Výpočet vektoru směru Slunce (rotace kolem osy Z)
                 const sunPhi = angle * Math.PI * 2;
@@ -2437,20 +2521,46 @@
                     this.sharedMaterial.uniforms.uFogColor.value.copy(this.levelRenderer.getFogColor(angle));
                 }
 
-                // 4. Aktualizace vizuálního Slunce na obloze
+                // 4. Aktualizace vizuálního Slunce a Měsíce na obloze
                 const sunDist = 380;
+                const sunHeight = sunDir.y;
                 this.sunGroup.position.copy(sunDir).multiplyScalar(sunDist);
-                this.sunGroup.lookAt(0, 0, 0); // Aby Slunce mířilo ke středu
 
-                // 5. Bonus: Pokud je noc, Slunce by mělo být Měsícem (změna barvy/jasu)
-                const isNight = sunDir.y < 0;
-                this.sunMesh.material.color.set(isNight ? 0xeeeeee : 0xffffff);
+                // Měsíc na opačné straně
+                const moonDir = sunDir.clone().negate();
+                this.moonGroup.position.copy(moonDir).multiplyScalar(sunDist);
 
-                this.scene.background = currentSkyColor;
-
-                if (this.sharedMaterial && this.sharedMaterial.uniforms) {
-                    this.sharedMaterial.uniforms.uFogColor.value.copy(this.levelRenderer.getFogColor(angle));
+                // Natočení rovin směrem od středu skyGroup (aby čelily kameře)
+                if (this.sunMesh) {
+                    this.sunMesh.lookAt(this.sunGroup.position.clone().multiplyScalar(2));
                 }
+                if (this.moonMesh) {
+                    this.moonMesh.lookAt(this.moonGroup.position.clone().multiplyScalar(2));
+                }
+
+                // 5. Viditelnost Slunce a Měsíce
+                this.sunGroup.visible = sunHeight > -0.15;
+                this.moonGroup.visible = sunHeight < 0.15;
+
+                // 6. Aktualizace sky dome shaderu
+                if (this.skyDome) {
+                    this.skyDome.material.uniforms.uSunHeight.value = sunHeight;
+                    this.skyDome.material.uniforms.uTime.value = performance.now() / 1000;
+                    this.skyDome.position.copy(this.camera.position);
+                }
+
+                // 7. Viditelnost hvězd (zobrazí se, když Slunce klesne pod horizont)
+                if (this.starsMesh) {
+                    this.starsMesh.material.opacity = Math.max(0, Math.min(1, -sunHeight * 3 + 0.2));
+                    this.starsMesh.position.copy(this.camera.position);
+                }
+
+                // 8. Barva mlhy podle denní doby
+                const fogColor = this.levelRenderer.getFogColor(angle);
+                if (this.sharedMaterial && this.sharedMaterial.uniforms) {
+                    this.sharedMaterial.uniforms.uFogColor.value.copy(fogColor);
+                }
+                this.scene.fog.color.copy(fogColor);
 
                 this.levelRenderer.update(this.camera.position.x, this.camera.position.z, this.camera.position.y);
                 this.renderer.render(this.scene, this.camera);
@@ -2476,10 +2586,88 @@
                 if (this.skyGroup && this.camera) {
                     this.skyGroup.position.copy(this.camera.position);
                 }
+                // Sky dome a hvězdy sledují pozici kamery
+                if (this.skyDome && this.camera) {
+                    this.skyDome.position.copy(this.camera.position);
+                }
+                if (this.starsMesh && this.camera) {
+                    this.starsMesh.position.copy(this.camera.position);
+                }
             }
 
             async init() {
                 await this.asset_manager.loadAll();
+                this.setupCelestials();
+            }
+
+            // Zpracování textury: černé pozadí → průhledné
+            makeBlackTransparent(texture) {
+                if (!texture || !texture.image) return texture;
+                const img = texture.image;
+                const canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                const data = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const d = data.data;
+                for (let i = 0; i < d.length; i += 4) {
+                    // Pokud je pixel velmi tmavý (černé pozadí), udělej ho průhledným
+                    if (d[i] < 15 && d[i + 1] < 15 && d[i + 2] < 15) {
+                        d[i + 3] = 0;
+                    }
+                }
+                ctx.putImageData(data, 0, 0);
+                const newTex = new THREE.CanvasTexture(canvas);
+                newTex.magFilter = THREE.LinearFilter;
+                newTex.minFilter = THREE.LinearMipmapLinearFilter;
+                newTex.colorSpace = THREE.SRGBColorSpace;
+                return newTex;
+            }
+
+            setupCelestials() {
+                const sunDist = 380;
+
+                // --- SLUNCE: PlaneGeometry přilepený na obloze ---
+                const sunTex = this.makeBlackTransparent(this.asset_manager.get("sun"));
+                const sunPlane = new THREE.PlaneGeometry(60, 60);
+                const sunMat = new THREE.MeshBasicMaterial({
+                    map: sunTex,
+                    fog: false,
+                    depthWrite: false,
+                    depthTest: false,
+                    transparent: true,
+                    side: THREE.DoubleSide
+                });
+                this.sunMesh = new THREE.Mesh(sunPlane, sunMat);
+                this.sunMesh.frustumCulled = false;
+                this.sunMesh.renderOrder = -1;
+                this.sunGroup.add(this.sunMesh);
+
+                // --- MĚSÍC: PlaneGeometry přilepený na obloze ---
+                const moonTex = this.makeBlackTransparent(this.asset_manager.get("moon"));
+                const moonPlane = new THREE.PlaneGeometry(40, 40);
+                const moonMat = new THREE.MeshBasicMaterial({
+                    map: moonTex,
+                    fog: false,
+                    depthWrite: false,
+                    depthTest: false,
+                    transparent: true,
+                    side: THREE.DoubleSide
+                });
+                this.moonMesh = new THREE.Mesh(moonPlane, moonMat);
+                this.moonMesh.frustumCulled = false;
+                this.moonMesh.renderOrder = -1;
+                this.moonGroup.add(this.moonMesh);
+
+                // Počáteční umístění
+                const sunDirection = new THREE.Vector3(0.5, 0.9, 0.3).normalize();
+                this.sunGroup.position.copy(sunDirection.clone().multiplyScalar(sunDist));
+                this.moonGroup.position.copy(sunDirection.clone().multiplyScalar(-sunDist));
+
+                // Natočení rovin směrem od středu (skyGroup) ven
+                this.sunMesh.lookAt(sunDirection.clone().multiplyScalar(sunDist * 2));
+                this.moonMesh.lookAt(sunDirection.clone().multiplyScalar(-sunDist * 2));
             }
 
             loop() {
