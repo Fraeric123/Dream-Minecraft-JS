@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="cs">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infinite Minecraft - Physics & Detailed Textures</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: sans-serif;
+            user-select: none;
+        }
+
+        #crosshair {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 10px;
+            height: 10px;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        #crosshair::before,
+        #crosshair::after {
+            content: '';
+            position: absolute;
+            background: white;
+        }
+
+        #crosshair::before {
+            top: 4px;
+            left: 0;
+            width: 10px;
+            height: 2px;
+        }
+
+        #crosshair::after {
+            top: 0;
+            left: 4px;
+            width: 2px;
+            height: 10px;
+        }
+
+        #ui {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            color: white;
+            font-family: monospace;
+            font-size: 13px;
+            text-shadow: 1px 1px 2px black;
+            pointer-events: none;
+            background: rgba(0, 0, 0, 0.5);
+            padding: 10px 14px;
+            border-radius: 6px;
+            line-height: 1.4;
+        }
+
+        #selected-block {
+            color: #ffff55;
+            font-weight: bold;
+        }
+
+        #render-distance-display {
+            color: #55ffff;
+            font-weight: bold;
+        }
+
+        .stats-panel {
+            margin-top: 6px;
+            padding-top: 6px;
+            border-top: 1px solid rgba(255, 255, 255, 0.3);
+            color: #dddddd;
+        }
+
+        .stats-panel span {
+            color: #aaffaa;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="crosshair"></div>
+    <div id="ui">
+        Seed: <span id="seed-display"></span><br>
+        Vybraný blok [1-5]: <span id="selected-block">GRASS</span><br>
+        Dohled [F]: <span id="render-distance-display">8</span> chunků<br>
+
+        <div class="stats-panel">
+            <strong>Statistiky světa:</strong><br>
+            FPS: <span id="fps-display">0</span><br>
+            Pozice: <span id="pos-display">0, 0, 0</span><br>
+            Chunky v paměti: <span id="chunks-mem-display">0</span><br>
+            Renderované chunky: <span id="chunks-render-display">0</span><br>
+            Počet geometrií: <span id="geo-display">0</span><br>
+            Počet materiálů: <span id="mat-display">0</span><br>
+            Draw Calls: <span id="drawcalls-display">0</span>
+        </div>
+
+        <small style="display: block; margin-top: 6px; color: #ccc;">
+            LMB: Ničit | RMB: Stavět | WASD: Pohyb | Mezerník: Skok | F: Změna dohledu
+        </small>
+    </div>
+
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@latest/build/three.module.js"
+      }
+    }
+  </script>
+    <script type="module" src="./js/Game.js"></script>
+</body>
+
+</html>

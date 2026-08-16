@@ -2637,6 +2637,10 @@
                         this.updateFog();
                         document.getElementById('render-distance-display').innerText = newDist;
                     }
+
+                    if (e.code === 'KeyG') {
+                        this.player.aabb.move(0,1,1000000000)
+                    }
                 });
 
                 document.addEventListener('keyup', (e) => this.keys[e.code] = false);
@@ -2661,7 +2665,7 @@
                     this.selectionBox.visible = false;
                 }
 
-                this.level.time += dt * 200;
+                //this.level.time += dt * 200;
                 const angle = this.levelRenderer.calculateCelestialAngle(this.level.time);
 
                 // 2. Výpočet vektoru směru Slunce (rotace kolem osy Z)

@@ -6,12 +6,12 @@ export const build = 40;
 
 
 
-import * as threeWebGPU from "../js/libs/three.webgpu.min.js"
-import * as threeWebGL from "../js/libs/three.module.min.js"
-import { GLTFLoader } from "../js/libs/GLTFLoader.js";
-import { RGBELoader } from "../js/libs/RGBELoader.js";
-import { clone } from "../js/libs/SkeletonUtils.js";
-import "../js/libs/jszip.min.js";
+import * as threeWebGPU from "../libs/three.webgpu.min.js"
+import * as threeWebGL from "../libs/three.module.min.js"
+import { GLTFLoader } from "../libs/GLTFLoader.js";
+import { RGBELoader } from "../libs/RGBELoader.js";
+import { clone } from "../libs/SkeletonUtils.js";
+import "../libs/jszip.min.js";
 
 import { Enum, EventList, getRandomSplash, createOverlayGradient, JavaRandom, AABB } from "./Util.js";
 import { BitmapFont, AssetLoadingScreen, LogoScreen, MenuScreen, OptionsScreen, WorldSelectScreen, CreateWorldScreen, GenerateWorldScreen, SaveWorldScreen, GameMenuScreen, InGameScreen, InGameOptionsScreen  } from "./GUI.js";
