@@ -29,9 +29,9 @@ class Game {
     constructor() {
         this.assets = new AssetList();
 
-        this.assets.newAsset("clouds", "../assets/textures/clouds.png", Enum.AssetType.Texture);
-        this.assets.newAsset("sun", "../assets/textures/sun.png", Enum.AssetType.Texture);
-        this.assets.newAsset("moon", "../assets/textures/moon.png", Enum.AssetType.Texture);
+        this.assets.newAsset("clouds", "./assets/textures/clouds.png", Enum.AssetType.Texture);
+        this.assets.newAsset("sun", "./assets/textures/sun.png", Enum.AssetType.Texture);
+        this.assets.newAsset("moon", "./assets/textures/moon.png", Enum.AssetType.Texture);
 
         this.asset_manager = new AssetManager(this);
 
@@ -493,7 +493,7 @@ class Game {
             }
 
             if (e.code === 'KeyG') {
-                this.player.aabb.move(6199254740991, 0, 6199254740991)
+                this.player.aabb.move(619925*2*Math.random() - 619925, 0, 619925*2*Math.random() - 619925)
             }
         });
 
